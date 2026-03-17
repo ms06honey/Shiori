@@ -34,6 +34,10 @@ class JsonBookmarkExporter @Inject constructor(
                     put("category", b.category)
                     put("tags", JSONArray(b.tags))
                     put("createdAt", b.createdAt)
+                    put("thumbnailUrl", b.thumbnailUrl)
+                    put("videoUrl", b.videoUrl)
+                    put("localVideoPath", b.localVideoPath)
+                    put("userMemo", b.userMemo)
                 })
             }
         }

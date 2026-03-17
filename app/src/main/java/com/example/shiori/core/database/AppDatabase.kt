@@ -9,7 +9,7 @@ import com.example.shiori.feature.bookmark.data.local.BookmarkEntity
 
 @Database(
     entities = [BookmarkEntity::class],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -42,6 +42,30 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE bookmarks ADD COLUMN localImagePaths TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        /**
+         * v4 → v5 マイグレーション
+         * ・videoUrl カラム追加（X / Web から抽出した動画 URL）
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE bookmarks ADD COLUMN videoUrl TEXT NOT NULL DEFAULT ''"
+                )
+            }
+        }
+
+        /**
+         * v5 → v6 マイグレーション
+         * ・localVideoPath カラム追加（ローカル保存した動画ファイルパス）
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE bookmarks ADD COLUMN localVideoPath TEXT NOT NULL DEFAULT ''"
                 )
             }
         }

@@ -25,11 +25,13 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.util.formatDate
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
 import com.example.shiori.feature.bookmark.domain.model.toMarkdown
+import java.io.File
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -123,6 +125,8 @@ private fun DetailContent(
     onMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -140,6 +144,7 @@ private fun DetailContent(
                     url = bookmark.url,
                     title = bookmark.title,
                     thumbnailUrl = bookmark.thumbnailUrl,
+                    hasVideo = bookmark.localVideoPath.isNotBlank() || bookmark.videoUrl.isNotBlank(),
                     localThumbnailPath = bookmark.localImagePaths.firstOrNull() ?: "",
                     modifier = Modifier.size(72.dp)
                 )
@@ -208,6 +213,87 @@ private fun DetailContent(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
+                }
+            }
+        }
+
+        // ── 動画 ────────────────────────────────────────────────────
+        if (bookmark.videoUrl.isNotBlank() || bookmark.localVideoPath.isNotBlank()) {
+            MacSection {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    val playableUri = remember(bookmark.localVideoPath, bookmark.videoUrl) {
+                        when {
+                            bookmark.localVideoPath.isNotBlank() -> Uri.fromFile(File(bookmark.localVideoPath))
+                            bookmark.videoUrl.isNotBlank() -> Uri.parse(bookmark.videoUrl)
+                            else -> null
+                        }
+                    }
+
+                    Text(
+                        "動画",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        if (bookmark.localVideoPath.isNotBlank()) {
+                            "ローカル保存済みの動画を再生できます。"
+                        } else {
+                            "動画本体のローカル保存に失敗したため、リモート動画を再生します。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    playableUri?.let { uri ->
+                        BookmarkVideoPlayer(videoUri = uri)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                val videoUri = when {
+                                    bookmark.localVideoPath.isNotBlank() -> FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.fileprovider",
+                                        File(bookmark.localVideoPath)
+                                    )
+                                    else -> playableUri ?: return@OutlinedButton
+                                }
+                                val typedIntent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(
+                                        videoUri,
+                                        if ((bookmark.videoUrl.ifBlank { videoUri.toString() }).contains(".m3u8", ignoreCase = true)) {
+                                            "application/x-mpegURL"
+                                        } else {
+                                            "video/*"
+                                        }
+                                    )
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                val fallbackIntent = Intent(Intent.ACTION_VIEW, videoUri).apply {
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+
+                                runCatching { context.startActivity(typedIntent) }
+                                    .recoverCatching { context.startActivity(fallbackIntent) }
+                                    .onFailure { onMessage("動画を開けませんでした") }
+                            },
+                            shape = MaterialTheme.shapes.medium
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("外部プレイヤーで開く")
+                        }
+                    }
+                    if (bookmark.videoUrl.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            bookmark.videoUrl,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }

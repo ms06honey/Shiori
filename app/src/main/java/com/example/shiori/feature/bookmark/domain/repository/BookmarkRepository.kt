@@ -25,6 +25,8 @@ interface BookmarkRepository {
         category: String,
         tags: String,
         thumbnailUrl: String = "",
+        videoUrl: String = "",
+        localVideoPath: String = "",
         localImagePaths: String = ""
     )
     /** 再解析のため既存ブックマークを "読み込み中..." 状態にリセットする */

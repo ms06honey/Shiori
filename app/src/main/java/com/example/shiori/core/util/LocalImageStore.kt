@@ -61,7 +61,22 @@ class LocalImageStore @Inject constructor(
                             Log.w(TAG, "HTTP ${response.code} for image[$index]: $url")
                             null
                         } else {
-                            response.body?.bytes()
+                            val contentType = response.header("Content-Type").orEmpty().lowercase()
+                            val finalUrl = response.request.url.toString().lowercase()
+                            val isImage = contentType.startsWith("image/") ||
+                                finalUrl.endsWith(".jpg") || finalUrl.endsWith(".jpeg") ||
+                                finalUrl.endsWith(".png") || finalUrl.endsWith(".gif") ||
+                                finalUrl.endsWith(".webp")
+                            val looksLikeVideo = contentType.startsWith("video/") ||
+                                finalUrl.contains(".mp4") || finalUrl.contains(".m3u8") ||
+                                finalUrl.contains(".mov") || finalUrl.contains(".webm")
+
+                            if (!isImage || looksLikeVideo || contentType.startsWith("text/html")) {
+                                Log.d(TAG, "Skip non-image candidate image[$index]: $finalUrl ($contentType)")
+                                null
+                            } else {
+                                response.body?.bytes()
+                            }
                         }
                     } ?: return@mapIndexedNotNull null
 

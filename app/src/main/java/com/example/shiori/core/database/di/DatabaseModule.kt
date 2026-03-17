@@ -39,6 +39,10 @@ object DatabaseModule {
             .addMigrations(AppDatabase.MIGRATION_2_3)
             // v3 → v4: localImagePaths カラム追加（既存データ保持）
             .addMigrations(AppDatabase.MIGRATION_3_4)
+            // v4 → v5: videoUrl カラム追加（既存データ保持）
+            .addMigrations(AppDatabase.MIGRATION_4_5)
+            // v5 → v6: localVideoPath カラム追加（既存データ保持）
+            .addMigrations(AppDatabase.MIGRATION_5_6)
             // 定義されていないマイグレーションパス（v1→v3 等）への安全策
             .fallbackToDestructiveMigration(true)
             .build()

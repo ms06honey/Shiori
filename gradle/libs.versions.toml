@@ -38,6 +38,9 @@ securityCrypto = "1.1.0-alpha06"
 # Image Loading
 coil = "2.7.0"
 
+# Video Playback
+media3 = "1.5.1"
+
 [libraries]
 # AndroidX Core
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -94,6 +97,10 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 
 # Image Loading - Coil
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+
+# Video Playback - Media3 / ExoPlayer
+androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

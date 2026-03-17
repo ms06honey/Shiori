@@ -7,5 +7,9 @@
     <files-path
         name="local_images"
         path="images/" />
+
+    <files-path
+        name="local_videos"
+        path="videos/" />
 </paths>
 

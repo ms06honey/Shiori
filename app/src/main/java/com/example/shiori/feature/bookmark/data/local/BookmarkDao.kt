@@ -50,7 +50,8 @@ interface BookmarkDao {
         """
         UPDATE bookmarks
         SET title = :title, summary = :summary, category = :category, tags = :tags,
-            thumbnailUrl = :thumbnailUrl, localImagePaths = :localImagePaths
+            thumbnailUrl = :thumbnailUrl, videoUrl = :videoUrl, localVideoPath = :localVideoPath,
+            localImagePaths = :localImagePaths
         WHERE id = :id
         """
     )
@@ -61,6 +62,8 @@ interface BookmarkDao {
         category: String,
         tags: String,
         thumbnailUrl: String = "",
+        videoUrl: String = "",
+        localVideoPath: String = "",
         localImagePaths: String = ""
     )
 
@@ -69,7 +72,9 @@ interface BookmarkDao {
     suspend fun updateUserMemo(id: Long, memo: String)
 
     // ── 再解析: title を "読み込み中..." にリセット ────────────────
-    @Query("UPDATE bookmarks SET title = '読み込み中...', summary = '', category = '', tags = '' WHERE id = :id")
+    @Query(
+        "UPDATE bookmarks SET title = '読み込み中...', summary = '', category = '', tags = '', thumbnailUrl = '', videoUrl = '', localVideoPath = '', localImagePaths = '' WHERE id = :id"
+    )
     suspend fun resetToProcessing(id: Long)
 
     // ── 削除 ────────────────────────────────────────────────────────

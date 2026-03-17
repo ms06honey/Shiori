@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
@@ -26,6 +27,10 @@ data class ScrapedContent(
     val imageUrl: String = "",
     /** ページ内で検出したすべての有効な画像 URL（先頭がサムネイル優先度最高） */
     val allImageUrls: List<String> = emptyList(),
+    /** 抽出できた最優先の動画 URL（MP4 > HLS > その他の順で選択） */
+    val videoUrl: String = "",
+    /** 抽出できた動画 URL 候補の一覧 */
+    val allVideoUrls: List<String> = emptyList(),
 )
 
 /**
@@ -60,6 +65,8 @@ class WebScraper @Inject constructor(
         private const val MAX_TWEET_REDIRECT_HOPS = 5
         /** 1 ページから収集する最大画像枚数 */
         private const val MAX_ALL_IMAGES = 20
+        /** 1 ページから収集する最大動画候補数 */
+        private const val MAX_ALL_VIDEOS = 8
         private const val TAG = "WebScraper"
     }
 
@@ -323,23 +330,23 @@ class WebScraper @Inject constructor(
                     else -> "Xの投稿"
                 }
 
-                // media_extended から全画像 URL を取得
-                val allImageUrls = runCatching {
-                    json.optJSONArray("media_extended")?.let { arr ->
-                        (0 until arr.length()).mapNotNull { i ->
-                            arr.getJSONObject(i).optString("url").takeIf { it.isNotBlank() }
-                        }
-                    } ?: emptyList()
-                }.getOrDefault(emptyList())
+                val allImageUrls = extractVxTwitterImageUrls(json)
+                val allVideoUrls = extractVxTwitterVideoUrls(json)
                 val imageUrl = allImageUrls.firstOrNull() ?: ""
+                val videoUrl = allVideoUrls.firstOrNull() ?: ""
 
-                Log.d(TAG, "vxtwitter: ok title=$title text=${text.take(60)} images=${allImageUrls.size}")
+                Log.d(
+                    TAG,
+                    "vxtwitter: ok title=$title text=${text.take(60)} images=${allImageUrls.size} videos=${allVideoUrls.size}"
+                )
                 ScrapedContent(
                     title = title,
                     description = text,
                     mainText = text,
                     imageUrl = imageUrl,
-                    allImageUrls = allImageUrls
+                    allImageUrls = allImageUrls,
+                    videoUrl = videoUrl,
+                    allVideoUrls = allVideoUrls
                 )
             }
         }.getOrElse { e ->
@@ -408,7 +415,9 @@ class WebScraper @Inject constructor(
                     title = title,
                     description = tweetText,
                     mainText = tweetText,
-                    imageUrl = ""
+                    imageUrl = "",
+                    videoUrl = "",
+                    allVideoUrls = emptyList()
                 )
             }
         }.getOrElse { e ->
@@ -467,22 +476,20 @@ class WebScraper @Inject constructor(
                 }
                 val baseText = text.ifBlank { cleanedSharedText.orEmpty() }
 
-                val allTweetImageUrls = runCatching {
-                    json.optJSONArray("mediaDetails")?.let { arr ->
-                        (0 until arr.length()).mapNotNull { i ->
-                            arr.getJSONObject(i).optString("media_url_https").takeIf { it.isNotBlank() }
-                        }
-                    } ?: emptyList()
-                }.getOrDefault(emptyList())
+                val allTweetImageUrls = extractSyndicationImageUrls(json)
+                val allTweetVideoUrls = extractSyndicationVideoUrls(json)
                 val tweetImageUrl = allTweetImageUrls.firstOrNull() ?: ""
+                val tweetVideoUrl = allTweetVideoUrls.firstOrNull() ?: ""
 
-                Log.d(TAG, "syndication: ok title=$title images=${allTweetImageUrls.size}")
+                Log.d(TAG, "syndication: ok title=$title images=${allTweetImageUrls.size} videos=${allTweetVideoUrls.size}")
                 ScrapedContent(
                     title = title,
                     description = baseText,
                     mainText = baseText,
                     imageUrl = tweetImageUrl,
-                    allImageUrls = allTweetImageUrls
+                    allImageUrls = allTweetImageUrls,
+                    videoUrl = tweetVideoUrl,
+                    allVideoUrls = allTweetVideoUrls
                 )
             }
         }.getOrElse { e ->
@@ -502,6 +509,189 @@ class WebScraper @Inject constructor(
             .find(path)
             ?.groupValues
             ?.getOrNull(1)
+    }
+
+    private fun extractVxTwitterImageUrls(json: JSONObject): List<String> {
+        val result = linkedSetOf<String>()
+        val mediaArray = json.optJSONArray("media_extended") ?: return emptyList()
+
+        for (i in 0 until mediaArray.length()) {
+            val media = mediaArray.optJSONObject(i) ?: continue
+            val type = media.optString("type").lowercase()
+            if (type == "image") {
+                addImageCandidate(result, media.optString("url"))
+                addImageCandidate(result, media.optString("media_url_https"))
+            } else {
+                addImageCandidate(result, media.optString("thumbnail_url"))
+                addImageCandidate(result, media.optString("poster"))
+                addImageCandidate(result, media.optString("poster_url"))
+                addImageCandidate(result, media.optString("image"))
+                val mediaUrl = media.optString("url")
+                if (!looksLikeVideoUrl(mediaUrl)) addImageCandidate(result, mediaUrl)
+            }
+        }
+
+        return result.take(MAX_ALL_IMAGES)
+    }
+
+    private fun extractVxTwitterVideoUrls(json: JSONObject): List<String> {
+        val result = linkedSetOf<String>()
+
+        addVideoCandidate(result, json.optString("videoURL"))
+        addVideoCandidate(result, json.optString("video_url"))
+        addVideoCandidate(result, json.optString("playback_url"))
+        addVideoCandidate(result, json.optString("playbackUrl"))
+
+        json.optJSONObject("video")?.let { collectVideoCandidatesFromObject(it, result) }
+
+        val mediaArray = json.optJSONArray("media_extended")
+        if (mediaArray != null) {
+            for (i in 0 until mediaArray.length()) {
+                mediaArray.optJSONObject(i)?.let { collectVideoCandidatesFromObject(it, result) }
+            }
+        }
+
+        collectVideoCandidatesRecursively(json, result)
+
+        return sortVideoCandidates(result)
+    }
+
+    private fun extractSyndicationImageUrls(json: JSONObject): List<String> {
+        val result = linkedSetOf<String>()
+
+        json.optJSONArray("mediaDetails")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val media = arr.optJSONObject(i) ?: continue
+                addImageCandidate(result, media.optString("media_url_https"))
+                addImageCandidate(result, media.optString("media_url"))
+                addImageCandidate(result, media.optString("thumbnail_url"))
+                addImageCandidate(result, media.optString("poster"))
+                addImageCandidate(result, media.optString("poster_url"))
+            }
+        }
+
+        json.optJSONObject("video")?.let { video ->
+            addImageCandidate(result, video.optString("poster"))
+            addImageCandidate(result, video.optString("poster_url"))
+            addImageCandidate(result, video.optString("thumbnail_url"))
+        }
+
+        return result.take(MAX_ALL_IMAGES)
+    }
+
+    private fun extractSyndicationVideoUrls(json: JSONObject): List<String> {
+        val result = linkedSetOf<String>()
+
+        json.optJSONObject("video")?.let { collectVideoCandidatesFromObject(it, result) }
+
+        json.optJSONArray("mediaDetails")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                arr.optJSONObject(i)?.let { collectVideoCandidatesFromObject(it, result) }
+            }
+        }
+
+        addVideoCandidate(result, json.optString("video_url"))
+        addVideoCandidate(result, json.optString("videoURL"))
+
+        collectVideoCandidatesRecursively(json, result)
+
+        return sortVideoCandidates(result)
+    }
+
+    private fun collectVideoCandidatesRecursively(
+        node: Any?,
+        result: MutableSet<String>,
+        depth: Int = 0
+    ) {
+        if (node == null || depth > 8) return
+        when (node) {
+            is JSONObject -> {
+                val iterator = node.keys()
+                while (iterator.hasNext()) {
+                    val key = iterator.next()
+                    val value = node.opt(key)
+
+                    if (value is String) {
+                        val lowerKey = key.lowercase()
+                        if (looksLikeVideoUrl(value) ||
+                            lowerKey.contains("video") ||
+                            lowerKey.contains("variant") ||
+                            lowerKey.contains("stream") ||
+                            lowerKey.contains("playback")
+                        ) {
+                            addVideoCandidate(result, value)
+                        }
+                    }
+
+                    collectVideoCandidatesRecursively(value, result, depth + 1)
+                }
+            }
+
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    collectVideoCandidatesRecursively(node.opt(i), result, depth + 1)
+                }
+            }
+
+            is String -> {
+                if (looksLikeVideoUrl(node)) addVideoCandidate(result, node)
+            }
+        }
+    }
+
+    private fun collectVideoCandidatesFromObject(
+        json: JSONObject,
+        result: MutableSet<String>
+    ) {
+        addVideoCandidate(result, json.optString("videoURL"))
+        addVideoCandidate(result, json.optString("video_url"))
+        addVideoCandidate(result, json.optString("playback_url"))
+        addVideoCandidate(result, json.optString("playbackUrl"))
+        addVideoCandidate(result, json.optString("stream_url"))
+        addVideoCandidate(result, json.optString("streamUrl"))
+        addVideoCandidate(result, json.optString("source"))
+        addVideoCandidate(result, json.optString("src"))
+
+        val maybeUrl = json.optString("url")
+        val mediaHints = listOf(
+            json.optString("type"),
+            json.optString("content_type"),
+            json.optString("contentType")
+        ).joinToString(" ").lowercase()
+        if (looksLikeVideoUrl(maybeUrl) || mediaHints.contains("video") || mediaHints.contains("gif")) {
+            addVideoCandidate(result, maybeUrl)
+        }
+
+        collectVideoCandidatesFromVariants(json.optJSONArray("variants"), result)
+
+        json.optJSONObject("video_info")?.let { videoInfo ->
+            addVideoCandidate(result, videoInfo.optString("url"))
+            addVideoCandidate(result, videoInfo.optString("src"))
+            collectVideoCandidatesFromVariants(videoInfo.optJSONArray("variants"), result)
+        }
+    }
+
+    private fun collectVideoCandidatesFromVariants(
+        variants: JSONArray?,
+        result: MutableSet<String>
+    ) {
+        if (variants == null) return
+        for (i in 0 until variants.length()) {
+            val variant = variants.optJSONObject(i) ?: continue
+            val url = variant.optString("url").ifBlank {
+                variant.optString("src").ifBlank {
+                    variant.optString("source")
+                }
+            }
+            val typeHints = listOf(
+                variant.optString("content_type"),
+                variant.optString("contentType"),
+                variant.optString("type")
+            ).joinToString(" ").lowercase()
+            if (looksLikeVideoUrl(url) || typeHints.contains("video") || typeHints.contains("mpegurl")) {
+                addVideoCandidate(result, url)
+            }
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -529,7 +719,9 @@ class WebScraper @Inject constructor(
             .ifBlank { doc.select("meta[name=description]").attr("content") }
 
         val allImageUrls = extractAllImageUrls(doc)
+        val allVideoUrls = extractAllVideoUrls(doc)
         val imageUrl = allImageUrls.firstOrNull() ?: ""
+        val videoUrl = allVideoUrls.firstOrNull() ?: ""
 
         val mainText = extractMainText(doc)
         return ScrapedContent(
@@ -537,7 +729,9 @@ class WebScraper @Inject constructor(
             description = description,
             mainText = mainText,
             imageUrl = imageUrl,
-            allImageUrls = allImageUrls
+            allImageUrls = allImageUrls,
+            videoUrl = videoUrl,
+            allVideoUrls = allVideoUrls
         )
     }
 
@@ -599,6 +793,39 @@ class WebScraper @Inject constructor(
     }
 
     /**
+     * ページ内の動画 URL 候補を収集して返す。
+     * 優先度は MP4 > HLS(.m3u8) > その他の埋め込み動画 URL。
+     */
+    private fun extractAllVideoUrls(doc: Document): List<String> {
+        val baseUri = doc.baseUri()
+        val result = linkedSetOf<String>()
+
+        val metaSelectors = listOf(
+            "meta[property=og:video]",
+            "meta[property=og:video:url]",
+            "meta[property=og:video:secure_url]",
+            "meta[name=twitter:player:stream]",
+            "meta[property=twitter:player:stream]",
+            "meta[itemprop=contentUrl]"
+        )
+        for (selector in metaSelectors) {
+            val raw = doc.select(selector).attr("content").trim()
+            if (raw.isNotBlank()) {
+                addVideoCandidate(result, raw, baseUri)
+            }
+        }
+
+        doc.select("video[src], video source[src], source[src]").forEach { el ->
+            val src = el.attr("abs:src").ifBlank { el.attr("src") }
+            addVideoCandidate(result, src, baseUri)
+        }
+
+        val sorted = sortVideoCandidates(result)
+        Log.d(TAG, "extractAllVideoUrls: found ${sorted.size} videos")
+        return sorted
+    }
+
+    /**
      * 画像 URL の正規化。
      * - protocol-relative (`//...`) → `https://...`
      * - 相対パス → ベース URL で解決
@@ -620,6 +847,69 @@ class WebScraper @Inject constructor(
             }.getOrNull()
             else -> null
         }
+    }
+
+    /** 動画 URL の正規化。相対パスや protocol-relative URL も解決する。 */
+    private fun normalizeVideoUrl(raw: String, baseUri: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return null
+        if (trimmed.startsWith("data:")) return null
+        if (trimmed.startsWith("javascript:", ignoreCase = true)) return null
+
+        return when {
+            trimmed.startsWith("//") -> "https:$trimmed"
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            baseUri.isNotBlank() -> runCatching {
+                URL(URL(baseUri), trimmed).toString()
+            }.getOrNull()
+            else -> null
+        }
+    }
+
+    private fun addImageCandidate(
+        result: MutableSet<String>,
+        raw: String,
+        baseUri: String = ""
+    ) {
+        normalizeImageUrl(raw, baseUri)
+            ?.takeUnless(::looksLikeVideoUrl)
+            ?.let(result::add)
+    }
+
+    private fun addVideoCandidate(
+        result: MutableSet<String>,
+        raw: String,
+        baseUri: String = ""
+    ) {
+        normalizeVideoUrl(raw, baseUri)?.let(result::add)
+    }
+
+    private fun sortVideoCandidates(candidates: Set<String>): List<String> =
+        candidates
+            .filter { it.isNotBlank() }
+            .sortedBy(::videoUrlPriority)
+            .take(MAX_ALL_VIDEOS)
+
+    private fun videoUrlPriority(url: String): Int {
+        val lower = url.lowercase()
+        return when {
+            lower.contains(".mp4") -> 0
+            lower.contains("video.twimg.com") && lower.contains(".m3u8") -> 1
+            lower.contains(".m3u8") -> 2
+            looksLikeVideoUrl(lower) -> 3
+            else -> 4
+        }
+    }
+
+    private fun looksLikeVideoUrl(url: String): Boolean {
+        val lower = url.lowercase()
+        return lower.contains(".mp4") ||
+            lower.contains(".m3u8") ||
+            lower.contains(".mov") ||
+            lower.contains("video.twimg.com") ||
+            lower.contains("/ext_tw_video/") ||
+            lower.contains("/amplify_video/") ||
+            lower.contains("/tweet_video/")
     }
 
     private fun looksLikeBlockedPage(content: ScrapedContent): Boolean {
@@ -660,12 +950,23 @@ class WebScraper @Inject constructor(
             ?: xFallback?.imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
             ?: emptyList()
 
+        val videoUrl = primary?.videoUrl?.takeIf { it.isNotBlank() }
+            ?: xFallback?.videoUrl?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        val allVideoUrls = primary?.allVideoUrls?.takeIf { it.isNotEmpty() }
+            ?: xFallback?.allVideoUrls?.takeIf { it.isNotEmpty() }
+            ?: xFallback?.videoUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+            ?: emptyList()
+
         return ScrapedContent(
             title = title,
             description = description,
             mainText = mainText,
             imageUrl = imageUrl,
-            allImageUrls = allImageUrls
+            allImageUrls = allImageUrls,
+            videoUrl = videoUrl,
+            allVideoUrls = allVideoUrls
         )
     }
 
@@ -682,7 +983,9 @@ class WebScraper @Inject constructor(
         title = "共有された投稿",
         description = this.take(200),
         mainText = this.take(MAX_CONTENT_CHARS),
-        imageUrl = ""
+        imageUrl = "",
+        videoUrl = "",
+        allVideoUrls = emptyList()
     )
 
     private fun extractMainText(doc: Document): String {

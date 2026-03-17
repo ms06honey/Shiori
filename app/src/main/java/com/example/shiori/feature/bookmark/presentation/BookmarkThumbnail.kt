@@ -32,6 +32,7 @@ fun BookmarkThumbnail(
     title: String,
     modifier: Modifier = Modifier,
     thumbnailUrl: String = "",
+    hasVideo: Boolean = false,
     /** ローカル保存された先頭画像の絶対パス。存在する場合はリモート URL より優先される */
     localThumbnailPath: String = ""
 ) {
@@ -81,12 +82,37 @@ fun BookmarkThumbnail(
                     GradientThumbnail(url = url, title = title, modifier = Modifier.fillMaxSize())
                 }
             )
+            if (hasVideo) {
+                VideoBadge(modifier = Modifier.align(Alignment.Center))
+            }
         }
     } else {
-        GradientThumbnail(
-            url = url,
-            title = title,
-            modifier = modifier.clip(shape)
+        Box(modifier = modifier.clip(shape)) {
+            GradientThumbnail(
+                url = url,
+                title = title,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (hasVideo) {
+                VideoBadge(modifier = Modifier.align(Alignment.Center))
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.58f), MaterialTheme.shapes.small)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "▶",
+            color = Color.White,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
         )
     }
 }

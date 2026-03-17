@@ -268,6 +268,7 @@ private fun BookmarkCard(
                 url = bookmark.url,
                 title = bookmark.title,
                 thumbnailUrl = bookmark.thumbnailUrl,
+                hasVideo = bookmark.localVideoPath.isNotBlank() || bookmark.videoUrl.isNotBlank(),
                 localThumbnailPath = bookmark.localImagePaths.firstOrNull() ?: "",
                 modifier = Modifier.size(56.dp)
             )

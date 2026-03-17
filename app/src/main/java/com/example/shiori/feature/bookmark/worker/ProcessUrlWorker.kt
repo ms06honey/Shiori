@@ -13,6 +13,7 @@ import com.example.shiori.core.datastore.EncryptedPrefsManager
 import com.example.shiori.core.scraper.ScrapedContent
 import com.example.shiori.core.scraper.WebScraper
 import com.example.shiori.core.util.LocalImageStore
+import com.example.shiori.core.util.LocalVideoStore
 import com.example.shiori.core.util.NotificationConstants
 import com.example.shiori.core.util.NotificationIds
 import com.example.shiori.feature.bookmark.domain.repository.BookmarkRepository
@@ -42,7 +43,8 @@ class ProcessUrlWorker @AssistedInject constructor(
     private val repository: BookmarkRepository,
     private val webScraper: WebScraper,
     private val encryptedPrefsManager: EncryptedPrefsManager,
-    private val localImageStore: LocalImageStore
+    private val localImageStore: LocalImageStore,
+    private val localVideoStore: LocalVideoStore
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -127,6 +129,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         return withContext(Dispatchers.IO) {
             var scraped: ScrapedContent? = null
             var localImagePathsStr = ""
+            var localVideoPath = ""
             try {
                 // ── Step 3 & 4: スクレイプ ────────────────────────────
                 scraped = webScraper.scrape(url, sharedText).getOrNull()
@@ -145,6 +148,20 @@ class ProcessUrlWorker @AssistedInject constructor(
                 }
                 localImagePathsStr = localPaths.joinToString(",")
                 Log.d(TAG, "Saved ${localPaths.size} images locally for bookmarkId=$bookmarkId")
+
+                // ── Step 4.6: 動画本体をローカル保存 ─────────────────
+                val videoCandidates = scraped?.allVideoUrls.orEmpty()
+                localVideoPath = if (videoCandidates.isNotEmpty()) {
+                    Log.d(TAG, "Trying ${videoCandidates.size} video candidates for bookmarkId=$bookmarkId")
+                    localVideoStore.downloadFirstSupported(
+                        bookmarkId = bookmarkId,
+                        videoUrls = videoCandidates,
+                        referer = url
+                    ).orEmpty()
+                } else {
+                    ""
+                }
+                Log.d(TAG, "Saved local video for bookmarkId=$bookmarkId -> ${localVideoPath.isNotBlank()}")
 
                 // ── Step 5: Gemini 呼び出し ───────────────────────────
                 val apiKey = encryptedPrefsManager.getGeminiApiKey().toValidApiKey()
@@ -204,6 +221,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                 // ── Step 6: DB 更新 ──────────────────────────────────
                 repository.updateAiMetadata(bookmarkId, title, summary, category, tags,
                     thumbnailUrl = scraped?.imageUrl ?: "",
+                    videoUrl = scraped?.videoUrl ?: "",
+                    localVideoPath = localVideoPath,
                     localImagePaths = localImagePathsStr)
 
                 // ── Step 7: 完了通知 ─────────────────────────────────
@@ -220,6 +239,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                     "未分類",
                     "",
                     thumbnailUrl = scraped?.imageUrl ?: "",
+                    videoUrl = scraped?.videoUrl ?: "",
+                    localVideoPath = localVideoPath,
                     localImagePaths = localImagePathsStr
                 )
                 showResultNotification(scraped?.title ?: url)

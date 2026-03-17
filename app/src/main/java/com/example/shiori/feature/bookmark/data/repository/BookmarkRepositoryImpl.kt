@@ -1,6 +1,7 @@
 ﻿package com.example.shiori.feature.bookmark.data.repository
 
 import com.example.shiori.core.util.LocalImageStore
+import com.example.shiori.core.util.LocalVideoStore
 import com.example.shiori.feature.bookmark.data.local.BookmarkDao
 import com.example.shiori.feature.bookmark.data.local.BookmarkEntity
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
@@ -13,7 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class BookmarkRepositoryImpl @Inject constructor(
     private val dao: BookmarkDao,
-    private val localImageStore: LocalImageStore
+    private val localImageStore: LocalImageStore,
+    private val localVideoStore: LocalVideoStore
 ) : BookmarkRepository {
 
     override fun getAllBookmarks(): Flow<List<Bookmark>> =
@@ -40,18 +42,30 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun updateAiMetadata(
         id: Long, title: String, summary: String, category: String, tags: String,
-        thumbnailUrl: String, localImagePaths: String
-    ) = dao.updateAiMetadata(id, title, summary, category, tags, thumbnailUrl, localImagePaths)
+        thumbnailUrl: String, videoUrl: String, localVideoPath: String, localImagePaths: String
+    ) = dao.updateAiMetadata(
+        id,
+        title,
+        summary,
+        category,
+        tags,
+        thumbnailUrl,
+        videoUrl,
+        localVideoPath,
+        localImagePaths
+    )
 
     override suspend fun resetBookmarkToProcessing(id: Long) {
         // 再解析時は旧ローカル画像を削除（新しい画像で上書き）
         localImageStore.deleteAll(id)
+        localVideoStore.deleteAll(id)
         dao.resetToProcessing(id)
     }
 
     override suspend fun deleteBookmark(id: Long) {
         // ブックマーク削除時にローカル保存画像も削除
         localImageStore.deleteAll(id)
+        localVideoStore.deleteAll(id)
         dao.deleteBookmarkById(id)
     }
 
@@ -78,6 +92,8 @@ private fun BookmarkEntity.toDomain() = Bookmark(
     createdAt = createdAt,
     userMemo = userMemo,
     thumbnailUrl = thumbnailUrl,
+    videoUrl = videoUrl,
+    localVideoPath = localVideoPath,
     localImagePaths = if (localImagePaths.isBlank()) {
         emptyList()
     } else {
