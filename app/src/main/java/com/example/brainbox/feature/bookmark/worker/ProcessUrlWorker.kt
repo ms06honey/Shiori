@@ -3,6 +3,7 @@ package com.example.brainbox.feature.bookmark.worker
 import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
@@ -44,6 +45,16 @@ class ProcessUrlWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_URL = "url"
+        private const val TAG = "ProcessUrlWorker"
+
+        /** プレースホルダーや空のキーを弾いて有効なAPIキーのみ返す */
+        private fun String?.toValidApiKey(): String? =
+            this?.trim()?.takeIf { key ->
+                key.isNotBlank() &&
+                !key.startsWith("YOUR_") &&
+                !key.contains("placeholder", ignoreCase = true) &&
+                key.length > 10
+            }
 
         fun buildRequest(url: String): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<ProcessUrlWorker>()
@@ -73,14 +84,35 @@ class ProcessUrlWorker @AssistedInject constructor(
                 scraped = webScraper.scrape(url).getOrNull()
 
                 // ── Step 5: Gemini 呼び出し ───────────────────────────
-                val apiKey = encryptedPrefsManager.getGeminiApiKey()
-                    ?.ifBlank { null }
-                    ?: BuildConfig.GEMINI_API_KEY.ifBlank { null }
+                val apiKey = encryptedPrefsManager.getGeminiApiKey().toValidApiKey()
+                    ?: BuildConfig.GEMINI_API_KEY.toValidApiKey()
+
+                Log.d(TAG, "API key ${if (apiKey != null) "found (len=${apiKey.length})" else "NOT SET"}")
 
                 val (title, summary, category, tags) = if (apiKey != null) {
-                    callGemini(apiKey, url, scraped)
+                    try {
+                        callGemini(apiKey, url, scraped)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Gemini API call failed: ${e.message}", e)
+                        // APIキーが無効な場合は設定を促す通知
+                        if (e.message?.contains("API_KEY", ignoreCase = true) == true ||
+                            e.message?.contains("401", ignoreCase = true) == true ||
+                            e.message?.contains("403", ignoreCase = true) == true ||
+                            e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
+                        ) {
+                            showApiKeyErrorNotification()
+                        }
+                        AiResult(
+                            title = scraped?.title?.ifBlank { url } ?: url,
+                            summary = scraped?.description ?: "",
+                            category = "未分類",
+                            tags = ""
+                        )
+                    }
                 } else {
-                    // API キー未設定 → OGP データで最低限保存
+                    // API キー未設定 → OGP データで最低限保存 + 設定を促す通知
+                    Log.w(TAG, "Gemini API key is not set. Saved with OGP data only.")
+                    showApiKeyErrorNotification()
                     AiResult(
                         title = scraped?.title?.ifBlank { url } ?: url,
                         summary = scraped?.description ?: "",
@@ -98,6 +130,7 @@ class ProcessUrlWorker @AssistedInject constructor(
                 Result.success()
             } catch (e: Exception) {
                 // 失敗時も既に取得済みのスクレイプ結果 or URL を使って保存
+                Log.e(TAG, "doWork failed for url=$url: ${e.message}", e)
                 repository.updateAiMetadata(
                     bookmarkId,
                     scraped?.title?.ifBlank { url } ?: url,
@@ -254,6 +287,18 @@ class ProcessUrlWorker @AssistedInject constructor(
             .build()
         appContext.getSystemService(NotificationManager::class.java)
             .notify(NotificationIds.RESULT, notif)
+    }
+
+    /** Gemini APIキー未設定・無効のとき設定を促す通知を表示 */
+    private fun showApiKeyErrorNotification() {
+        val notif = NotificationCompat.Builder(appContext, NotificationConstants.CHANNEL_RESULT)
+            .setContentTitle("⚠️ Gemini APIキーを設定してください")
+            .setContentText("設定画面でAPIキーを入力するとAI解析・タグ付け・日本語翻訳が有効になります")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setAutoCancel(true)
+            .build()
+        appContext.getSystemService(NotificationManager::class.java)
+            .notify(NotificationIds.RESULT + 1, notif)
     }
 
     // ── 内部データクラス ──────────────────────────────────────────────
