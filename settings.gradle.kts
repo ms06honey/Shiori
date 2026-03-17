@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "BrainBox"
+rootProject.name = "SHIORI"
 include(":app")

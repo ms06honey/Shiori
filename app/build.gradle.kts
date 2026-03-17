@@ -20,7 +20,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.brainbox"
+    namespace = "com.example.shiori"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
