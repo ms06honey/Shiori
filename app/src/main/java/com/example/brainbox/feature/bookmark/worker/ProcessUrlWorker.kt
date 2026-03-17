@@ -142,27 +142,42 @@ class ProcessUrlWorker @AssistedInject constructor(
     }
 
     private fun buildPrompt(url: String, content: String): String = """
-        以下のWebページを分析し、JSONのみで回答してください（説明文・マークダウン不要）。
-        
+        以下のWebページの内容を分析してください。
+        ページの言語（英語・中国語・その他）に関わらず、すべての項目を必ず日本語で回答してください。
+        JSONのみで回答してください（説明文・コードブロック・マークダウン記号は不要）。
+
         URL: $url
         $content
-        
+
         回答フォーマット（このJSONのみ返すこと）:
         {
-          "title": "適切なタイトル（50文字以内の日本語）",
-          "summary": "2〜3文の日本語要約",
+          "title": "50文字以内の日本語タイトル（元が英語・他言語の場合は日本語に翻訳）",
+          "summary": "ページの主旨を2〜3文で要約（元が英語・他言語の場合も必ず日本語に翻訳して記述）",
           "category": "テクノロジー または ビジネス または 科学 または エンターテイメント または スポーツ または 政治 または 文化 または ライフスタイル または その他",
-          "tags": ["タグ1", "タグ2", "タグ3"]
+          "tags": ["キーワード1", "キーワード2", "キーワード3", "キーワード4"]
         }
+
+        tagsのルール（厳守）:
+        - 必ず2〜4個のタグを付ける
+        - 検索に役立つ具体的な固有名詞・技術用語・人名・製品名・トピックを選ぶ
+        - 「情報」「記事」「内容」などの汎用すぎる単語は避ける
+        - 英語の技術用語はそのまま使ってよい（例: "React", "ChatGPT", "AWS"）
+        - 日本語・英語どちらでも可（ただし読みやすさを優先）
     """.trimIndent()
 
     /** Gemini レスポンスからJSONを抽出してパース */
     private fun parseAiJson(text: String, scraped: ScrapedContent?): AiResult {
         return runCatching {
-            val start = text.indexOf('{')
-            val end = text.lastIndexOf('}')
-            require(start != -1 && end != -1)
-            val json = text.substring(start, end + 1)
+            // コードブロック（```json ... ```）を除去してからJSONを抽出
+            val cleaned = text
+                .replace(Regex("```json\\s*", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("```\\s*"), "")
+                .trim()
+
+            val start = cleaned.indexOf('{')
+            val end = cleaned.lastIndexOf('}')
+            require(start != -1 && end != -1) { "JSON not found in response" }
+            val json = cleaned.substring(start, end + 1)
 
             val title = Regex(""""title"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
                 ?: scraped?.title ?: ""
@@ -170,11 +185,9 @@ class ProcessUrlWorker @AssistedInject constructor(
                 ?: scraped?.description ?: ""
             val category = Regex(""""category"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
                 ?: "その他"
-            val tagsRaw = Regex(""""tags"\s*:\s*\[([^\]]*)]""").find(json)?.groupValues?.get(1) ?: ""
-            val tags = tagsRaw.split(",")
-                .map { it.trim().trim('"') }
-                .filter { it.isNotBlank() }
-                .joinToString(",")
+
+            // tags 配列を抽出: ["a", "b", "c"] 形式 or "a,b,c" 文字列の両方に対応
+            val tags = parseTagsFromJson(json)
 
             AiResult(title, summary, category, tags)
         }.getOrElse {
@@ -185,6 +198,35 @@ class ProcessUrlWorker @AssistedInject constructor(
                 tags = ""
             )
         }
+    }
+
+    /**
+     * JSON 文字列から tags 配列を抽出する。
+     * ["タグ1", "タグ2"] 形式と "タグ1,タグ2" 形式の両方を処理し、
+     * 2〜4 個の有効なタグを返す（カンマ区切り文字列として）。
+     */
+    private fun parseTagsFromJson(json: String): String {
+        val arrayMatch = Regex(""""tags"\s*:\s*\[([^\]]*)]""").find(json)
+            ?.groupValues?.get(1) ?: ""
+
+        val tags = if (arrayMatch.isNotBlank()) {
+            // JSON 配列形式: "タグ1", "タグ2", ... を抽出
+            Regex(""""([^"]+)"""").findAll(arrayMatch)
+                .map { it.groupValues[1].trim() }
+                .filter { it.isNotBlank() }
+                .toList()
+        } else {
+            // フォールバック: カンマ区切り文字列
+            Regex(""""tags"\s*:\s*"([^"]+)"""").find(json)
+                ?.groupValues?.get(1)
+                ?.split(",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?: emptyList()
+        }
+
+        // 2〜4 個に制限して返す
+        return tags.take(4).joinToString(",")
     }
 
     // ── 通知ヘルパー ──────────────────────────────────────────────────
