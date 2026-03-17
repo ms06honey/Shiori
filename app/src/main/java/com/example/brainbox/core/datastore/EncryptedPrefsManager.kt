@@ -32,7 +32,18 @@ class EncryptedPrefsManager @Inject constructor(
         private const val PREFS_FILE = "brainbox_secure_prefs"
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_GEMINI_API_KEY = "gemini_api_key"
+        private const val KEY_AI_MODEL = "ai_model"
+
+        /** 選択可能な AI モデル一覧 */
+        val AVAILABLE_MODELS = listOf(
+            AiModel("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", "高速・軽量（推奨）"),
+            AiModel("gemma-3-12b-it",        "Gemma 3 12B",           "高品質・オープンモデル"),
+        )
+        val DEFAULT_MODEL = AVAILABLE_MODELS.first()
     }
+
+    /** AI モデル定義 */
+    data class AiModel(val id: String, val displayName: String, val description: String)
 
     /**
      * 端末の生体認証/PIN 変更で Keystore の鍵が破壊された場合に true。
@@ -124,5 +135,15 @@ class EncryptedPrefsManager @Inject constructor(
     /** Gemini API キーを取得 */
     fun getGeminiApiKey(): String? {
         return prefs.getString(KEY_GEMINI_API_KEY, null)
+    }
+
+    /** 選択中の AI モデルID を保存 */
+    fun saveAiModel(modelId: String) {
+        prefs.edit().putString(KEY_AI_MODEL, modelId).apply()
+    }
+
+    /** 選択中の AI モデルID を取得（未設定ならデフォルト） */
+    fun getAiModelId(): String {
+        return prefs.getString(KEY_AI_MODEL, null) ?: DEFAULT_MODEL.id
     }
 }

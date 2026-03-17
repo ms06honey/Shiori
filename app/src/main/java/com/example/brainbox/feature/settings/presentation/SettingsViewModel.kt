@@ -17,7 +17,9 @@ data class SettingsUiState(
     val isSaved: Boolean = false,
     val errorMessage: String? = null,
     /** §4.2: PIN/指紋変更で Keystore が破壊された場合 true → 再設定を促す */
-    val keyInvalidated: Boolean = false
+    val keyInvalidated: Boolean = false,
+    /** 選択中の AI モデル ID */
+    val selectedModelId: String = EncryptedPrefsManager.DEFAULT_MODEL.id
 )
 
 @HiltViewModel
@@ -32,7 +34,8 @@ class SettingsViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isKeySet = encryptedPrefsManager.getGeminiApiKey() != null,
-                keyInvalidated = encryptedPrefsManager.wasKeyInvalidated
+                keyInvalidated = encryptedPrefsManager.wasKeyInvalidated,
+                selectedModelId = encryptedPrefsManager.getAiModelId()
             )
         }
     }
@@ -51,6 +54,11 @@ class SettingsViewModel @Inject constructor(
             encryptedPrefsManager.saveGeminiApiKey(key)
             _uiState.update { it.copy(isSaved = true, isKeySet = true, apiKeyInput = "", errorMessage = null) }
         }
+    }
+
+    fun onModelSelected(modelId: String) {
+        encryptedPrefsManager.saveAiModel(modelId)
+        _uiState.update { it.copy(selectedModelId = modelId) }
     }
 
     fun clearSaved() = _uiState.update { it.copy(isSaved = false) }

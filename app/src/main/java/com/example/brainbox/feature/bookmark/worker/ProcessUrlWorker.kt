@@ -103,12 +103,13 @@ class ProcessUrlWorker @AssistedInject constructor(
                     } catch (e: Exception) {
                         Log.e(TAG, "Gemini API call failed: ${e.message}", e)
                         when {
-                            // クォータ超過・一時エラー → WorkManager にリトライさせる
-                            e.javaClass.simpleName.contains("QuotaExceeded") ||
+                            // クォータ超過・一時エラー → WorkManager にリトライさせる（最大3回）
+                            (e.javaClass.simpleName.contains("QuotaExceeded") ||
                             e.message?.contains("quota", ignoreCase = true) == true ||
                             e.message?.contains("429", ignoreCase = true) == true ||
-                            e.message?.contains("RESOURCE_EXHAUSTED", ignoreCase = true) == true -> {
-                                Log.w(TAG, "Rate limit hit, will retry via WorkManager")
+                            e.message?.contains("RESOURCE_EXHAUSTED", ignoreCase = true) == true) &&
+                            runAttemptCount < 3 -> {
+                                Log.w(TAG, "Rate limit hit (attempt $runAttemptCount/3), will retry via WorkManager")
                                 return@withContext Result.retry()
                             }
                             // APIキー無効 → 設定を促す通知してOGPフォールバック
@@ -175,8 +176,11 @@ class ProcessUrlWorker @AssistedInject constructor(
         url: String,
         scraped: ScrapedContent?
     ): AiResult {
+        val selectedModelId = encryptedPrefsManager.getAiModelId()
+        Log.d(TAG, "Using AI model: $selectedModelId")
+
         val model = GenerativeModel(
-            modelName = "gemini-2.0-flash-lite",
+            modelName = selectedModelId,
             apiKey = apiKey,
             generationConfig = generationConfig {
                 temperature = 0.3f

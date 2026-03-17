@@ -15,6 +15,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.brainbox.core.datastore.EncryptedPrefsManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +129,57 @@ fun SettingsScreen(
                 Icon(Icons.Default.Save, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("保存")
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // ── AI モデル選択 ────────────────────────────────────────
+            Text("AI モデル", style = MaterialTheme.typography.titleMedium)
+
+            EncryptedPrefsManager.AVAILABLE_MODELS.forEach { model ->
+                val selected = uiState.selectedModelId == model.id
+                Card(
+                    onClick = { viewModel.onModelSelected(model.id) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (selected)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else
+                            MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    border = if (selected)
+                        CardDefaults.outlinedCardBorder()
+                    else null
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = selected,
+                            onClick = { viewModel.onModelSelected(model.id) }
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                model.displayName,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Text(
+                                model.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (selected) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
