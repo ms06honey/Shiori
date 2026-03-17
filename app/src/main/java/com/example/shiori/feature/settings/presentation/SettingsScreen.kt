@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -31,6 +32,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isThresholdInputInvalid = uiState.minImageSizeThresholdInput.isNotBlank() &&
+        (uiState.minImageSizeThresholdInput.toIntOrNull() == null || uiState.minImageSizeThresholdInput.toIntOrNull() == 0)
     var passwordVisible by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -252,6 +255,114 @@ fun SettingsScreen(
                             checkedTrackColor = MaterialTheme.colorScheme.primary
                         )
                     )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("小さい画像を保存しない", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "サムネイル以外の画像に対して最小サイズフィルタを適用します",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = uiState.isMinImageFilterEnabled,
+                        onCheckedChange = viewModel::onMinImageFilterEnabledChanged,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = uiState.minImageSizeThresholdInput,
+                    onValueChange = viewModel::onMinImageSizeThresholdChanged,
+                    label = { Text("保存しない画像サイズのしきい値(px)") },
+                    supportingText = {
+                        Text(
+                            when {
+                                !uiState.isMinImageFilterEnabled -> "フィルタOFF中はこの値は使われません"
+                                isThresholdInputInvalid -> "1以上を入力してください。入力終了時に前回の有効値へ戻ります"
+                                else -> "デフォルトは 63px。0以下は無効です"
+                            }
+                        )
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            if (!state.isFocused) {
+                                viewModel.commitMinImageSizeThresholdInput()
+                            }
+                        },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.medium,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    enabled = uiState.isMinImageFilterEnabled,
+                    isError = uiState.isMinImageFilterEnabled && isThresholdInputInvalid
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                EncryptedPrefsManager.ImageSizeFilterMode.entries.forEachIndexed { index, mode ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                    val selected = uiState.minImageSizeMode == mode
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = selected,
+                            onClick = {
+                                if (uiState.isMinImageFilterEnabled) {
+                                    viewModel.onMinImageSizeModeChanged(mode)
+                                }
+                            },
+                            enabled = uiState.isMinImageFilterEnabled,
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(mode.displayName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                mode.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (uiState.isMinImageFilterEnabled) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                }
+                            )
+                        }
+                        if (selected && uiState.isMinImageFilterEnabled) {
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
             }
 

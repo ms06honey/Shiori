@@ -23,7 +23,15 @@ data class SettingsUiState(
     /** スクレイパーモード */
     val scraperMode: EncryptedPrefsManager.ScraperMode = EncryptedPrefsManager.DEFAULT_SCRAPER_MODE,
     /** サムネイル以外の全画像もローカル保存するか */
-    val saveAllImages: Boolean = false
+    val saveAllImages: Boolean = false,
+    /** 小さい画像の保存除外フィルタを有効にするか */
+    val isMinImageFilterEnabled: Boolean = EncryptedPrefsManager.DEFAULT_ENABLE_MIN_IMAGE_FILTER,
+    /** 小さい画像を除外する判定モード */
+    val minImageSizeMode: EncryptedPrefsManager.ImageSizeFilterMode =
+        EncryptedPrefsManager.DEFAULT_MIN_IMAGE_SIZE_MODE,
+    /** 小さい画像を除外するしきい値(px)入力 */
+    val minImageSizeThresholdInput: String =
+        EncryptedPrefsManager.DEFAULT_MIN_IMAGE_SIZE_THRESHOLD.toString()
 )
 
 @HiltViewModel
@@ -41,7 +49,10 @@ class SettingsViewModel @Inject constructor(
                 keyInvalidated = encryptedPrefsManager.wasKeyInvalidated,
                 selectedModelId = encryptedPrefsManager.getAiModelId(),
                 scraperMode = encryptedPrefsManager.getScraperMode(),
-                saveAllImages = encryptedPrefsManager.isSaveAllImages()
+                saveAllImages = encryptedPrefsManager.isSaveAllImages(),
+                isMinImageFilterEnabled = encryptedPrefsManager.isMinImageFilterEnabled(),
+                minImageSizeMode = encryptedPrefsManager.getMinImageSizeMode(),
+                minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString()
             )
         }
     }
@@ -77,6 +88,44 @@ class SettingsViewModel @Inject constructor(
     fun onSaveAllImagesChanged(enabled: Boolean) {
         encryptedPrefsManager.setSaveAllImages(enabled)
         _uiState.update { it.copy(saveAllImages = enabled) }
+    }
+
+    fun onMinImageFilterEnabledChanged(enabled: Boolean) {
+        encryptedPrefsManager.setMinImageFilterEnabled(enabled)
+        _uiState.update { it.copy(isMinImageFilterEnabled = enabled) }
+    }
+
+    fun onMinImageSizeModeChanged(mode: EncryptedPrefsManager.ImageSizeFilterMode) {
+        encryptedPrefsManager.setMinImageSizeMode(mode)
+        _uiState.update { it.copy(minImageSizeMode = mode) }
+    }
+
+    fun onMinImageSizeThresholdChanged(input: String) {
+        val digitsOnly = input.filter(Char::isDigit)
+        _uiState.update { it.copy(minImageSizeThresholdInput = digitsOnly) }
+
+        digitsOnly.toIntOrNull()
+            ?.takeIf { it > 0 }
+            ?.let { encryptedPrefsManager.setMinImageSizeThresholdPx(it) }
+    }
+
+    /**
+     * しきい値入力の編集完了時に呼ぶ。
+     * 無効値（空/0）は現在保存済みの値へ戻し、有効値は正規化して反映する。
+     */
+    fun commitMinImageSizeThresholdInput() {
+        val currentInput = _uiState.value.minImageSizeThresholdInput
+        val parsed = currentInput.toIntOrNull()
+        if (parsed != null && parsed > 0) {
+            encryptedPrefsManager.setMinImageSizeThresholdPx(parsed)
+            _uiState.update {
+                it.copy(minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString())
+            }
+        } else {
+            _uiState.update {
+                it.copy(minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString())
+            }
+        }
     }
 
     fun clearSaved() = _uiState.update { it.copy(isSaved = false) }

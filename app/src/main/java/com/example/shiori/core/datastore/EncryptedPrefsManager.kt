@@ -35,6 +35,9 @@ class EncryptedPrefsManager @Inject constructor(
         private const val KEY_AI_MODEL = "ai_model"
         private const val KEY_SCRAPER_MODE = "scraper_mode"
         private const val KEY_SAVE_ALL_IMAGES = "save_all_images"
+        private const val KEY_ENABLE_MIN_IMAGE_FILTER = "enable_min_image_filter"
+        private const val KEY_MIN_IMAGE_SIZE_THRESHOLD = "min_image_size_threshold"
+        private const val KEY_MIN_IMAGE_SIZE_MODE = "min_image_size_mode"
 
         /** 選択可能な AI モデル一覧 */
         val AVAILABLE_MODELS = listOf(
@@ -45,6 +48,12 @@ class EncryptedPrefsManager @Inject constructor(
 
         /** デフォルトのスクレイパーモード（SNS クローラー UA が OGP 取得率高）*/
         val DEFAULT_SCRAPER_MODE = ScraperMode.CRAWLER_UA
+        /** デフォルトの最小画像サイズしきい値（63px 以下を除外） */
+        const val DEFAULT_MIN_IMAGE_SIZE_THRESHOLD = 63
+        /** デフォルトの画像サイズ判定モード */
+        val DEFAULT_MIN_IMAGE_SIZE_MODE = ImageSizeFilterMode.BOTH
+        /** デフォルトではサイズフィルタを有効化 */
+        const val DEFAULT_ENABLE_MIN_IMAGE_FILTER = true
     }
 
     /** AI モデル定義 */
@@ -59,6 +68,18 @@ class EncryptedPrefsManager @Inject constructor(
     enum class ScraperMode(val displayName: String, val description: String) {
         CRAWLER_UA("SNS クローラー UA", "OGP 画像・X 投稿の取得率が高い（推奨）"),
         CHROME_UA ("Chrome UA",        "PC Chrome を偽装。一般サイトとの互換性重視")
+    }
+
+    /**
+     * 小さい画像を保存しない判定モード。
+     * - BOTH : 横・縦の両方がしきい値以下のとき除外
+     * - WIDTH: 横幅がしきい値以下のとき除外
+     * - HEIGHT: 縦幅がしきい値以下のとき除外
+     */
+    enum class ImageSizeFilterMode(val displayName: String, val description: String) {
+        BOTH("両方が指定値以下", "横幅と縦幅の両方が指定値以下なら保存しない"),
+        WIDTH("横サイズが指定値以下", "横幅が指定値以下なら保存しない"),
+        HEIGHT("縦サイズが指定値以下", "縦幅が指定値以下なら保存しない")
     }
 
     /**
@@ -185,4 +206,36 @@ class EncryptedPrefsManager @Inject constructor(
     /** 「全画像をローカル保存する」設定を取得 */
     fun isSaveAllImages(): Boolean =
         prefs.getBoolean(KEY_SAVE_ALL_IMAGES, false)
+
+    /** 小さい画像の保存除外フィルタを有効/無効化 */
+    fun setMinImageFilterEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLE_MIN_IMAGE_FILTER, enabled).apply()
+    }
+
+    /** 小さい画像の保存除外フィルタが有効か */
+    fun isMinImageFilterEnabled(): Boolean =
+        prefs.getBoolean(KEY_ENABLE_MIN_IMAGE_FILTER, DEFAULT_ENABLE_MIN_IMAGE_FILTER)
+
+    /** 最小画像保存サイズのしきい値(px)を保存。0 以下はデフォルト値へ補正する。 */
+    fun setMinImageSizeThresholdPx(value: Int) {
+        val normalized = value.takeIf { it > 0 } ?: DEFAULT_MIN_IMAGE_SIZE_THRESHOLD
+        prefs.edit().putInt(KEY_MIN_IMAGE_SIZE_THRESHOLD, normalized).apply()
+    }
+
+    /** 最小画像保存サイズのしきい値(px)を取得 */
+    fun getMinImageSizeThresholdPx(): Int =
+        prefs.getInt(KEY_MIN_IMAGE_SIZE_THRESHOLD, DEFAULT_MIN_IMAGE_SIZE_THRESHOLD)
+            .takeIf { it > 0 } ?: DEFAULT_MIN_IMAGE_SIZE_THRESHOLD
+
+    /** 最小画像保存サイズの判定モードを保存 */
+    fun setMinImageSizeMode(mode: ImageSizeFilterMode) {
+        prefs.edit().putString(KEY_MIN_IMAGE_SIZE_MODE, mode.name).apply()
+    }
+
+    /** 最小画像保存サイズの判定モードを取得 */
+    fun getMinImageSizeMode(): ImageSizeFilterMode {
+        val name = prefs.getString(KEY_MIN_IMAGE_SIZE_MODE, null) ?: return DEFAULT_MIN_IMAGE_SIZE_MODE
+        return runCatching { ImageSizeFilterMode.valueOf(name) }
+            .getOrDefault(DEFAULT_MIN_IMAGE_SIZE_MODE)
+    }
 }

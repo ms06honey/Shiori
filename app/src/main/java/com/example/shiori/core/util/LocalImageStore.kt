@@ -1,7 +1,9 @@
 package com.example.shiori.core.util
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.util.Log
+import com.example.shiori.core.datastore.EncryptedPrefsManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,7 +21,8 @@ import javax.inject.Singleton
 @Singleton
 class LocalImageStore @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val encryptedPrefsManager: EncryptedPrefsManager
 ) {
     companion object {
         private const val TAG = "LocalImageStore"
@@ -82,6 +85,22 @@ class LocalImageStore @Inject constructor(
 
                     if (bytes.isEmpty()) return@mapIndexedNotNull null
 
+                    val dimensions = decodeImageDimensions(bytes)
+                    val isThumbnailCandidate = index == 0
+                    val isFilterEnabled = encryptedPrefsManager.isMinImageFilterEnabled()
+                    if (!isThumbnailCandidate && isFilterEnabled && dimensions != null) {
+                        val (width, height) = dimensions
+                        val threshold = encryptedPrefsManager.getMinImageSizeThresholdPx()
+                        val mode = encryptedPrefsManager.getMinImageSizeMode()
+                        if (shouldSkipImage(width, height, threshold, mode)) {
+                            Log.d(
+                                TAG,
+                                "Skip small image[$index] ${width}x${height}px threshold=$threshold mode=$mode url=$url"
+                            )
+                            return@mapIndexedNotNull null
+                        }
+                    }
+
                     val ext = guessExtension(url)
                     val file = File(dir, "$index.$ext")
                     file.writeBytes(bytes)
@@ -112,6 +131,35 @@ class LocalImageStore @Inject constructor(
             path.endsWith(".gif")  -> "gif"
             path.endsWith(".webp") -> "webp"
             else                   -> "jpg"
+        }
+    }
+
+    private fun decodeImageDimensions(bytes: ByteArray): Pair<Int, Int>? {
+        val options = BitmapFactory.Options().apply {
+            inJustDecodeBounds = true
+        }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        val width = options.outWidth
+        val height = options.outHeight
+        return if (width > 0 && height > 0) width to height else null
+    }
+
+    private fun shouldSkipImage(
+        width: Int,
+        height: Int,
+        threshold: Int,
+        mode: EncryptedPrefsManager.ImageSizeFilterMode
+    ): Boolean {
+        val normalizedThreshold = threshold.coerceAtLeast(1)
+        return when (mode) {
+            EncryptedPrefsManager.ImageSizeFilterMode.BOTH ->
+                width <= normalizedThreshold && height <= normalizedThreshold
+
+            EncryptedPrefsManager.ImageSizeFilterMode.WIDTH ->
+                width <= normalizedThreshold
+
+            EncryptedPrefsManager.ImageSizeFilterMode.HEIGHT ->
+                height <= normalizedThreshold
         }
     }
 }
