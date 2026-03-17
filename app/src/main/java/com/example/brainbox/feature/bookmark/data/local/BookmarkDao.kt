@@ -1,0 +1,64 @@
+package com.example.brainbox.feature.bookmark.data.local
+
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface BookmarkDao {
+
+    // ── 全件取得（新しい順）──────────────────────────────────────────
+    @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC")
+    fun getAllBookmarks(): Flow<List<BookmarkEntity>>
+
+    // ── AI 生成カテゴリ一覧（重複排除）──────────────────────────────
+    @Query("SELECT DISTINCT category FROM bookmarks WHERE category != '' ORDER BY category")
+    fun getAllCategories(): Flow<List<String>>
+
+    // ── カテゴリで絞り込み ──────────────────────────────────────────
+    @Query("SELECT * FROM bookmarks WHERE category = :category ORDER BY createdAt DESC")
+    fun getBookmarksByCategory(category: String): Flow<List<BookmarkEntity>>
+
+    // ── フリーワード検索（title / summary / tags 対象）──────────────
+    @Query(
+        """
+        SELECT * FROM bookmarks
+        WHERE title   LIKE '%' || :query || '%'
+           OR summary LIKE '%' || :query || '%'
+           OR tags    LIKE '%' || :query || '%'
+        ORDER BY createdAt DESC
+        """
+    )
+    fun searchBookmarks(query: String): Flow<List<BookmarkEntity>>
+
+    // ── ID 指定取得（Worker が更新用に使用）─────────────────────────
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    suspend fun getBookmarkById(id: Long): BookmarkEntity?
+
+    // ── 挿入（Worker が最初に placeholder を保存）──────────────────
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBookmark(bookmark: BookmarkEntity): Long
+
+    // ── AI 解析完了後の更新 ─────────────────────────────────────────
+    @Query(
+        """
+        UPDATE bookmarks
+        SET title = :title, summary = :summary, category = :category, tags = :tags
+        WHERE id = :id
+        """
+    )
+    suspend fun updateAiMetadata(
+        id: Long,
+        title: String,
+        summary: String,
+        category: String,
+        tags: String
+    )
+
+    // ── 削除 ────────────────────────────────────────────────────────
+    @Query("DELETE FROM bookmarks WHERE id = :id")
+    suspend fun deleteBookmarkById(id: Long)
+
+    // ── JSON エクスポート用（一括取得）──────────────────────────────
+    @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC")
+    suspend fun getAllBookmarksOnce(): List<BookmarkEntity>
+}

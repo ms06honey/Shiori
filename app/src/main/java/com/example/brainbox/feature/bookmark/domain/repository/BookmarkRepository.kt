@@ -1,0 +1,19 @@
+package com.example.brainbox.feature.bookmark.domain.repository
+
+import com.example.brainbox.feature.bookmark.domain.model.Bookmark
+import kotlinx.coroutines.flow.Flow
+
+interface BookmarkRepository {
+    fun getAllBookmarks(): Flow<List<Bookmark>>
+    fun getAllCategories(): Flow<List<String>>
+    fun getBookmarksByCategory(category: String): Flow<List<Bookmark>>
+    fun searchBookmarks(query: String): Flow<List<Bookmark>>
+    suspend fun getBookmarkById(id: Long): Bookmark?
+    /** Share Intent 受信直後に placeholder を保存し ID を返す（Worker が使用） */
+    suspend fun saveInitialBookmark(url: String): Long
+    /** Worker の AI 解析完了後に呼ぶ */
+    suspend fun updateAiMetadata(id: Long, title: String, summary: String, category: String, tags: String)
+    suspend fun deleteBookmark(id: Long)
+    /** JSON エクスポート用 */
+    suspend fun getAllBookmarksForExport(): List<Bookmark>
+}
