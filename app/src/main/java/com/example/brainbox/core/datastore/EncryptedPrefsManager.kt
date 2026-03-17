@@ -36,8 +36,8 @@ class EncryptedPrefsManager @Inject constructor(
 
         /** 選択可能な AI モデル一覧 */
         val AVAILABLE_MODELS = listOf(
-            AiModel("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite", "高速・軽量（推奨）"),
-            AiModel("gemma-3-12b-it",        "Gemma 3 12B",           "高品質・オープンモデル"),
+            AiModel("gemini-3.1-flash-lite-preview", "Gemini 3.1 Flash Lite", "高速・軽量（推奨）"),
+            AiModel("gemma-3-12b-it",                "Gemma 3 12B",           "高品質・オープンモデル"),
         )
         val DEFAULT_MODEL = AVAILABLE_MODELS.first()
     }

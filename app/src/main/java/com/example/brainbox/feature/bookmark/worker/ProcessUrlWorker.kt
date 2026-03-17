@@ -198,6 +198,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         val prompt = buildPrompt(url, content)
         val response = model.generateContent(prompt)
         val text = response.text ?: throw IllegalStateException("Gemini から空レスポンス")
+        Log.d(TAG, "Gemini raw response: $text")
 
         return parseAiJson(text, scraped)
     }
@@ -250,6 +251,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             // tags 配列を抽出: ["a", "b", "c"] 形式 or "a,b,c" 文字列の両方に対応
             val tags = parseTagsFromJson(json)
 
+            Log.d(TAG, "Parsed → title=$title, category=$category, tags=$tags")
             AiResult(title, summary, category, tags)
         }.getOrElse {
             AiResult(
