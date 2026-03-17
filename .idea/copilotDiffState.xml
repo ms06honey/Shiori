@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/app/src/main/java/com/example/brainbox/feature/bookmark/data/work/WorkManagerBookmarkProcessingScheduler.kt">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/app/src/main/java/com/example/brainbox/feature/bookmark/data/work/WorkManagerBookmarkProcessingScheduler.kt" />
+              <option name="originalContent" value="package com.example.brainbox.feature.bookmark.data.work&#10;&#10;import androidx.work.WorkManager&#10;import com.example.brainbox.feature.bookmark.domain.scheduler.BookmarkProcessingScheduler&#10;import com.example.brainbox.feature.bookmark.worker.ProcessUrlWorker&#10;import javax.inject.Inject&#10;import javax.inject.Singleton&#10;&#10;@Singleton&#10;class WorkManagerBookmarkProcessingScheduler @Inject constructor(&#10;    private val workManager: WorkManager&#10;) : BookmarkProcessingScheduler {&#10;    override fun enqueueUrl(url: String) {&#10;        workManager.enqueue(ProcessUrlWorker.buildRequest(url))&#10;    }&#10;}&#10;&#10;" />
+              <option name="updatedContent" value="package com.example.brainbox.feature.bookmark.data.work&#10;&#10;import androidx.work.ExistingWorkPolicy&#10;import androidx.work.WorkManager&#10;import com.example.brainbox.feature.bookmark.domain.scheduler.BookmarkProcessingScheduler&#10;import com.example.brainbox.feature.bookmark.worker.ProcessUrlWorker&#10;import javax.inject.Inject&#10;import javax.inject.Singleton&#10;&#10;@Singleton&#10;class WorkManagerBookmarkProcessingScheduler @Inject constructor(&#10;    private val workManager: WorkManager&#10;) : BookmarkProcessingScheduler {&#10;    override fun enqueueUrl(url: String) {&#10;        // URL をキーに KEEP: 同じ URL の処理が既にキューにあれば重複登録しない&#10;        workManager.enqueueUniqueWork(&#10;            &quot;process_url_${url.hashCode()}&quot;,&#10;            ExistingWorkPolicy.KEEP,&#10;            ProcessUrlWorker.buildRequest(url)&#10;        )&#10;    }&#10;}&#13;&#10;&#13;&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>

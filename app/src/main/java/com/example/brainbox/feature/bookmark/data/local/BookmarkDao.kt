@@ -38,6 +38,13 @@ interface BookmarkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity): Long
 
+    /**
+     * リトライ重複防止用: 同じ URL で title が "読み込み中..." のまま
+     * 未処理のブックマークを返す。なければ null。
+     */
+    @Query("SELECT * FROM bookmarks WHERE url = :url AND title = '読み込み中...' LIMIT 1")
+    suspend fun getPendingBookmarkByUrl(url: String): BookmarkEntity?
+
     // ── AI 解析完了後の更新 ─────────────────────────────────────────
     @Query(
         """

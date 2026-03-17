@@ -11,6 +11,12 @@ interface BookmarkRepository {
     suspend fun getBookmarkById(id: Long): Bookmark?
     /** Share Intent 受信直後に placeholder を保存し ID を返す（Worker が使用） */
     suspend fun saveInitialBookmark(url: String): Long
+    /**
+     * リトライ重複防止版: 同じ URL の未処理ブックマーク(title="読み込み中...")が
+     * 既に存在すればその ID を、なければ新規作成して ID を返す。
+     * WorkManager がリトライするたびに余分なエントリが増えるのを防ぐ。
+     */
+    suspend fun getOrCreatePendingBookmark(url: String): Long
     /** Worker の AI 解析完了後に呼ぶ */
     suspend fun updateAiMetadata(id: Long, title: String, summary: String, category: String, tags: String)
     suspend fun deleteBookmark(id: Long)

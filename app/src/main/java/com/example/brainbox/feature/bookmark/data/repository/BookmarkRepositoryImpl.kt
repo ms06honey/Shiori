@@ -32,6 +32,10 @@ class BookmarkRepositoryImpl @Inject constructor(
     override suspend fun saveInitialBookmark(url: String): Long =
         dao.insertBookmark(BookmarkEntity(url = url, title = "読み込み中..."))
 
+    override suspend fun getOrCreatePendingBookmark(url: String): Long =
+        dao.getPendingBookmarkByUrl(url)?.id
+            ?: dao.insertBookmark(BookmarkEntity(url = url, title = "読み込み中..."))
+
     override suspend fun updateAiMetadata(
         id: Long, title: String, summary: String, category: String, tags: String
     ) = dao.updateAiMetadata(id, title, summary, category, tags)

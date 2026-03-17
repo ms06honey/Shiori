@@ -72,8 +72,10 @@ class ProcessUrlWorker @AssistedInject constructor(
         val url = inputData.getString(KEY_URL)?.trim()
             ?: return Result.failure()
 
-        // ── Step 1: placeholder を DB に保存 ─────────────────────────
-        val bookmarkId = repository.saveInitialBookmark(url)
+        // ── Step 1: pending ブックマークを取得 or 新規作成 ─────────
+        // getOrCreatePendingBookmark: 同じURLで「読み込み中...」のエントリが既に
+        // あればそのIDを返す（リトライ時の重複作成防止）、なければ新規挿入。
+        val bookmarkId = repository.getOrCreatePendingBookmark(url)
 
         // ── Step 2: フォアグラウンド通知 ────────────────────────────
         // リトライ時はバックグラウンドからフォアグラウンドサービスを起動できないため try-catch
