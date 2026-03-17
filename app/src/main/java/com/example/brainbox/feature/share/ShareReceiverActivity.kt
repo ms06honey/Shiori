@@ -24,13 +24,24 @@ class ShareReceiverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val url = intent
+        val sharePayload = intent
             ?.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
-            ?.getStringExtra(Intent.EXTRA_TEXT)
-            ?.extractUrl()
+            ?.let { shareIntent ->
+                listOfNotNull(
+                    shareIntent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.takeIf(String::isNotBlank),
+                    shareIntent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf(String::isNotBlank)
+                ).joinToString("\n").takeIf(String::isNotBlank)
+            }
+
+        val url = sharePayload?.extractUrl()
+        val sourcePackage = referrer?.host?.takeIf { it.isNotBlank() }
 
         if (url != null) {
-            bookmarkProcessingScheduler.enqueueUrl(url)
+            bookmarkProcessingScheduler.enqueueUrl(
+                url = url,
+                sharedText = sharePayload,
+                sourcePackage = sourcePackage
+            )
         }
 
         // ★ setContent() を呼ばずに即終了 → 元のアプリへ戻る

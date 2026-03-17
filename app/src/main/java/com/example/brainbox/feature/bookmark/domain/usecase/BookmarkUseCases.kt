@@ -36,7 +36,11 @@ class GetAllBookmarksForExportUseCase @Inject constructor(private val repository
 class EnqueueBookmarkProcessingUseCase @Inject constructor(
     private val scheduler: BookmarkProcessingScheduler
 ) {
-    operator fun invoke(url: String) = scheduler.enqueueUrl(url)
+    operator fun invoke(
+        url: String,
+        sharedText: String? = null,
+        sourcePackage: String? = null
+    ) = scheduler.enqueueUrl(url, sharedText, sourcePackage)
 }
 
 class ExportBookmarksUseCase @Inject constructor(

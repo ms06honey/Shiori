@@ -19,6 +19,8 @@ interface BookmarkRepository {
     suspend fun getOrCreatePendingBookmark(url: String): Long
     /** Worker の AI 解析完了後に呼ぶ */
     suspend fun updateAiMetadata(id: Long, title: String, summary: String, category: String, tags: String)
+    /** 再解析のため既存ブックマークを "読み込み中..." 状態にリセットする */
+    suspend fun resetBookmarkToProcessing(id: Long)
     suspend fun deleteBookmark(id: Long)
     /** JSON エクスポート用 */
     suspend fun getAllBookmarksForExport(): List<Bookmark>

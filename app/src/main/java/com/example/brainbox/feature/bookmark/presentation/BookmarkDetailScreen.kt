@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +29,7 @@ fun BookmarkDetailScreen(
     viewModel: BookmarkDetailViewModel = hiltViewModel()
 ) {
     val bookmark by viewModel.bookmark.collectAsStateWithLifecycle()
+    val isReanalyzing by viewModel.isReanalyzing.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     LaunchedEffect(bookmarkId) { viewModel.load(bookmarkId) }
@@ -44,6 +46,20 @@ fun BookmarkDetailScreen(
                 actions = {
                     val currentBookmark = bookmark
                     if (currentBookmark != null) {
+                        // 再解析ボタン
+                        IconButton(
+                            onClick = { viewModel.reanalyze() },
+                            enabled = !isReanalyzing
+                        ) {
+                            if (isReanalyzing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "再解析")
+                            }
+                        }
                         IconButton(onClick = {
                             context.startActivity(
                                 Intent(Intent.ACTION_VIEW, Uri.parse(currentBookmark.url))
@@ -65,6 +81,8 @@ fun BookmarkDetailScreen(
         } else {
             DetailContent(
                 bookmark = currentBookmark,
+                isReanalyzing = isReanalyzing,
+                onReanalyze = { viewModel.reanalyze() },
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -72,7 +90,12 @@ fun BookmarkDetailScreen(
 }
 
 @Composable
-private fun DetailContent(bookmark: Bookmark, modifier: Modifier = Modifier) {
+private fun DetailContent(
+    bookmark: Bookmark,
+    isReanalyzing: Boolean,
+    onReanalyze: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -111,16 +134,53 @@ private fun DetailContent(bookmark: Bookmark, modifier: Modifier = Modifier) {
         }
 
         // AI サマリー
-        if (bookmark.summary.isNotBlank()) {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("AI サマリー", style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(8.dp))
+                    IconButton(
+                        onClick = onReanalyze,
+                        enabled = !isReanalyzing,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        if (isReanalyzing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "再解析",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                if (isReanalyzing) {
+                    Text(
+                        "AIが解析中...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                    )
+                } else if (bookmark.summary.isNotBlank()) {
                     Text(bookmark.summary, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(
+                        "サマリーがありません。再解析ボタンで取得できます。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.6f)
+                    )
                 }
             }
         }

@@ -61,6 +61,10 @@ interface BookmarkDao {
         tags: String
     )
 
+    // ── 再解析: title を "読み込み中..." にリセット ────────────────
+    @Query("UPDATE bookmarks SET title = '読み込み中...', summary = '', category = '', tags = '' WHERE id = :id")
+    suspend fun resetToProcessing(id: Long)
+
     // ── 削除 ────────────────────────────────────────────────────────
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun deleteBookmarkById(id: Long)

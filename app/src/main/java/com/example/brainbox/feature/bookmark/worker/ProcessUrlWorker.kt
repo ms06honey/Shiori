@@ -45,6 +45,10 @@ class ProcessUrlWorker @AssistedInject constructor(
 
     companion object {
         const val KEY_URL = "url"
+        const val KEY_SHARED_TEXT = "shared_text"
+        const val KEY_SOURCE_PACKAGE = "source_package"
+        /** 再解析時に既存ブックマークIDを渡すキー。設定されていれば新規作成しない。 */
+        const val KEY_EXISTING_ID = "existing_id"
         private const val TAG = "ProcessUrlWorker"
 
         /** プレースホルダーや空のキーを弾いて有効なAPIキーのみ返す */
@@ -56,11 +60,37 @@ class ProcessUrlWorker @AssistedInject constructor(
                 key.length > 10
             }
 
-        fun buildRequest(url: String): OneTimeWorkRequest =
+        fun buildRequest(
+            url: String,
+            sharedText: String? = null,
+            sourcePackage: String? = null
+        ): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<ProcessUrlWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS)
-                .setInputData(workDataOf(KEY_URL to url))
+                .setInputData(
+                    workDataOf(
+                        KEY_URL to url,
+                        KEY_SHARED_TEXT to sharedText,
+                        KEY_SOURCE_PACKAGE to sourcePackage
+                    )
+                )
+                .build()
+
+        /** 再解析用リクエスト: 既存ブックマークIDを渡して既存エントリを上書きする */
+        fun buildReanalyzeRequest(
+            existingId: Long,
+            url: String
+        ): OneTimeWorkRequest =
+            OneTimeWorkRequestBuilder<ProcessUrlWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS)
+                .setInputData(
+                    workDataOf(
+                        KEY_URL to url,
+                        KEY_EXISTING_ID to existingId
+                    )
+                )
                 .build()
     }
 
@@ -71,11 +101,18 @@ class ProcessUrlWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         val url = inputData.getString(KEY_URL)?.trim()
             ?: return Result.failure()
+        val sharedText = inputData.getString(KEY_SHARED_TEXT)?.trim()?.takeIf(String::isNotBlank)
+        val sourcePackage = inputData.getString(KEY_SOURCE_PACKAGE)?.trim()?.takeIf(String::isNotBlank)
+        val existingId = inputData.getLong(KEY_EXISTING_ID, -1L).takeIf { it != -1L }
 
         // ── Step 1: pending ブックマークを取得 or 新規作成 ─────────
-        // getOrCreatePendingBookmark: 同じURLで「読み込み中...」のエントリが既に
-        // あればそのIDを返す（リトライ時の重複作成防止）、なければ新規挿入。
-        val bookmarkId = repository.getOrCreatePendingBookmark(url)
+        // 再解析の場合は既存IDを直接使ってリセット、通常登録は従来ロジック
+        val bookmarkId = if (existingId != null) {
+            repository.resetBookmarkToProcessing(existingId)
+            existingId
+        } else {
+            repository.getOrCreatePendingBookmark(url)
+        }
 
         // ── Step 2: フォアグラウンド通知 ────────────────────────────
         // リトライ時はバックグラウンドからフォアグラウンドサービスを起動できないため try-catch
@@ -89,7 +126,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             var scraped: ScrapedContent? = null
             try {
                 // ── Step 3 & 4: スクレイプ ────────────────────────────
-                scraped = webScraper.scrape(url).getOrNull()
+                scraped = webScraper.scrape(url, sharedText).getOrNull()
 
                 // ── Step 5: Gemini 呼び出し ───────────────────────────
                 val apiKey = encryptedPrefsManager.getGeminiApiKey().toValidApiKey()
@@ -99,7 +136,7 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 val (title, summary, category, tags) = if (apiKey != null) {
                     try {
-                        callGemini(apiKey, url, scraped)
+                        callGemini(apiKey, url, scraped, sharedText, sourcePackage)
                     } catch (e: Exception) {
                         Log.e(TAG, "Gemini API call failed: ${e.message}", e)
                         when {
@@ -174,7 +211,9 @@ class ProcessUrlWorker @AssistedInject constructor(
     private suspend fun callGemini(
         apiKey: String,
         url: String,
-        scraped: ScrapedContent?
+        scraped: ScrapedContent?,
+        sharedText: String?,
+        sourcePackage: String?
     ): AiResult {
         val selectedModelId = encryptedPrefsManager.getAiModelId()
         Log.d(TAG, "Using AI model: $selectedModelId")
@@ -193,6 +232,8 @@ class ProcessUrlWorker @AssistedInject constructor(
             scraped?.description?.takeIf { it.isNotBlank() }?.let { append("説明: $it\n") }
             // 本文が取得できた場合のみ追加（SPA はここが空）
             scraped?.mainText?.takeIf { it.isNotBlank() }?.let { append("本文: $it\n") }
+            sharedText?.takeIf { it.isNotBlank() }?.let { append("共有元テキスト(最優先で解釈): $it\n") }
+            sourcePackage?.takeIf { it.isNotBlank() }?.let { append("共有元アプリ: $it\n") }
         }
 
         val prompt = buildPrompt(url, content)
@@ -207,6 +248,8 @@ class ProcessUrlWorker @AssistedInject constructor(
         以下のWebページの内容を分析してください。
         ページの言語（英語・中国語・その他）に関わらず、すべての項目を必ず日本語で回答してください。
         JSONのみで回答してください（説明文・コードブロック・マークダウン記号は不要）。
+        共有元テキストが含まれている場合は、Webページ本文よりも共有元テキストを優先して解釈してください。
+        特に X / Twitter 共有では、共有元テキストや埋め込み情報を優先して「投稿内容」を要約・タグ付けしてください。
 
         URL: $url
         $content
@@ -214,7 +257,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         回答フォーマット（このJSONのみ返すこと）:
         {
           "title": "50文字以内の日本語タイトル（元が英語・他言語の場合は日本語に翻訳）",
-          "summary": "ページの主旨を2〜3文で要約（元が英語・他言語の場合も必ず日本語に翻訳して記述）",
+          "summary": "共有元テキストまたはページ主旨を2〜3文で要約（元が英語・他言語の場合も必ず日本語に翻訳して記述）",
           "category": "テクノロジー または ビジネス または 科学 または エンターテイメント または スポーツ または 政治 または 文化 または ライフスタイル または その他",
           "tags": ["キーワード1", "キーワード2", "キーワード3", "キーワード4"]
         }

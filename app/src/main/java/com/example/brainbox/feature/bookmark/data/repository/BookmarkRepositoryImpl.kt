@@ -40,6 +40,8 @@ class BookmarkRepositoryImpl @Inject constructor(
         id: Long, title: String, summary: String, category: String, tags: String
     ) = dao.updateAiMetadata(id, title, summary, category, tags)
 
+    override suspend fun resetBookmarkToProcessing(id: Long) = dao.resetToProcessing(id)
+
     override suspend fun deleteBookmark(id: Long) = dao.deleteBookmarkById(id)
 
     override suspend fun getAllBookmarksForExport(): List<Bookmark> =
