@@ -217,6 +217,76 @@ private fun DetailContent(
             }
         }
 
+        // ── タグ ────────────────────────────────────────────────────
+        if (bookmark.tags.isNotEmpty()) {
+            MacSection {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "タグ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        bookmark.tags.forEach { tag ->
+                            MacTagBadge(text = tag, isPrimary = false)
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── ユーザーメモ ────────────────────────────────────────────
+        MacSection {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "メモ",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(onClick = onOpenMemoDialog, modifier = Modifier.size(30.dp)) {
+                        Icon(
+                            if (bookmark.userMemo.isBlank()) Icons.AutoMirrored.Filled.NoteAdd
+                            else Icons.Default.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                if (bookmark.userMemo.isNotBlank()) {
+                    Text(bookmark.userMemo, style = MaterialTheme.typography.bodyMedium)
+                } else {
+                    Text(
+                        "メモがありません。編集ボタンで追加できます。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+
+        // ── 保存済み画像ギャラリー ──────────────────────────────────
+        if (bookmark.localImagePaths.isNotEmpty()) {
+            MacSection {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    ImageGallerySection(
+                        imagePaths = bookmark.localImagePaths,
+                        onMessage = onMessage
+                    )
+                }
+            }
+        }
+
         // ── 動画 ────────────────────────────────────────────────────
         if (bookmark.videoUrl.isNotBlank() || bookmark.localVideoPath.isNotBlank()) {
             MacSection {
@@ -294,76 +364,6 @@ private fun DetailContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                }
-            }
-        }
-
-        // ── タグ ────────────────────────────────────────────────────
-        if (bookmark.tags.isNotEmpty()) {
-            MacSection {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "タグ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        bookmark.tags.forEach { tag ->
-                            MacTagBadge(text = tag, isPrimary = false)
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── ユーザーメモ ────────────────────────────────────────────
-        MacSection {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "メモ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    IconButton(onClick = onOpenMemoDialog, modifier = Modifier.size(30.dp)) {
-                        Icon(
-                            if (bookmark.userMemo.isBlank()) Icons.AutoMirrored.Filled.NoteAdd
-                            else Icons.Default.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                if (bookmark.userMemo.isNotBlank()) {
-                    Text(bookmark.userMemo, style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    Text(
-                        "メモがありません。編集ボタンで追加できます。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
-                }
-            }
-        }
-
-        // ── 保存済み画像ギャラリー ──────────────────────────────────
-        if (bookmark.localImagePaths.isNotEmpty()) {
-            MacSection {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    ImageGallerySection(
-                        imagePaths = bookmark.localImagePaths,
-                        onMessage = onMessage
-                    )
                 }
             }
         }
