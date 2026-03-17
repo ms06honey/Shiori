@@ -37,8 +37,8 @@ class BookmarkRepositoryImpl @Inject constructor(
             ?: dao.insertBookmark(BookmarkEntity(url = url, title = "読み込み中..."))
 
     override suspend fun updateAiMetadata(
-        id: Long, title: String, summary: String, category: String, tags: String
-    ) = dao.updateAiMetadata(id, title, summary, category, tags)
+        id: Long, title: String, summary: String, category: String, tags: String, thumbnailUrl: String
+    ) = dao.updateAiMetadata(id, title, summary, category, tags, thumbnailUrl)
 
     override suspend fun resetBookmarkToProcessing(id: Long) = dao.resetToProcessing(id)
 
@@ -46,6 +46,9 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun getAllBookmarksForExport(): List<Bookmark> =
         dao.getAllBookmarksOnce().map(BookmarkEntity::toDomain)
+
+    override suspend fun updateUserMemo(id: Long, memo: String) =
+        dao.updateUserMemo(id, memo)
 }
 
 // ── マッピング拡張関数 ────────────────────────────────────────────────────
@@ -61,5 +64,7 @@ private fun BookmarkEntity.toDomain() = Bookmark(
     } else {
         tags.split(",").map(String::trim).filter(String::isNotBlank).distinct()
     },
-    createdAt = createdAt
+    createdAt = createdAt,
+    userMemo = userMemo,
+    thumbnailUrl = thumbnailUrl
 )

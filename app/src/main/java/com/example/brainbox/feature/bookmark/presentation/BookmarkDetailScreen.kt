@@ -7,7 +7,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.*
@@ -30,6 +32,8 @@ fun BookmarkDetailScreen(
 ) {
     val bookmark by viewModel.bookmark.collectAsStateWithLifecycle()
     val isReanalyzing by viewModel.isReanalyzing.collectAsStateWithLifecycle()
+    val showMemoDialog by viewModel.showMemoDialog.collectAsStateWithLifecycle()
+    val editingMemo by viewModel.editingMemo.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     LaunchedEffect(bookmarkId) { viewModel.load(bookmarkId) }
@@ -83,9 +87,20 @@ fun BookmarkDetailScreen(
                 bookmark = currentBookmark,
                 isReanalyzing = isReanalyzing,
                 onReanalyze = { viewModel.reanalyze() },
+                onOpenMemoDialog = { viewModel.openMemoDialog() },
                 modifier = Modifier.padding(innerPadding)
             )
         }
+    }
+
+    // メモ編集ダイアログ
+    if (showMemoDialog) {
+        MemoEditDialog(
+            memoText = editingMemo,
+            onMemoChange = viewModel::onMemoTextChange,
+            onConfirm = { viewModel.saveMemo() },
+            onDismiss = { viewModel.dismissMemoDialog() }
+        )
     }
 }
 
@@ -94,6 +109,7 @@ private fun DetailContent(
     bookmark: Bookmark,
     isReanalyzing: Boolean,
     onReanalyze: () -> Unit,
+    onOpenMemoDialog: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -108,6 +124,7 @@ private fun DetailContent(
             BookmarkThumbnail(
                 url = bookmark.url,
                 title = bookmark.title,
+                thumbnailUrl = bookmark.thumbnailUrl,
                 modifier = Modifier.size(72.dp)
             )
             Column(modifier = Modifier.weight(1f)) {
@@ -199,5 +216,80 @@ private fun DetailContent(
                 }
             }
         }
+
+        // ユーザーメモ
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("メモ", style = MaterialTheme.typography.labelMedium)
+                    IconButton(
+                        onClick = onOpenMemoDialog,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            if (bookmark.userMemo.isBlank()) Icons.AutoMirrored.Filled.NoteAdd else Icons.Default.Edit,
+                            contentDescription = if (bookmark.userMemo.isBlank()) "メモを追加" else "メモを編集",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                if (bookmark.userMemo.isNotBlank()) {
+                    Text(
+                        text = bookmark.userMemo,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                } else {
+                    Text(
+                        text = "メモがありません。編集ボタンで追加できます。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
     }
+}
+
+// ── メモ編集ダイアログ ─────────────────────────────────────────────────────
+
+@Composable
+private fun MemoEditDialog(
+    memoText: String,
+    onMemoChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("メモを編集") },
+        text = {
+            OutlinedTextField(
+                value = memoText,
+                onValueChange = onMemoChange,
+                placeholder = { Text("自由にメモを入力してください...") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp),
+                maxLines = 8,
+                minLines = 4
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("キャンセル") }
+        }
+    )
 }

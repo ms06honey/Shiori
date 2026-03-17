@@ -35,6 +35,9 @@ generativeai = "0.9.0"
 # Security
 securityCrypto = "1.1.0-alpha06"
 
+# Image Loading
+coil = "2.7.0"
+
 [libraries]
 # AndroidX Core
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -88,6 +91,9 @@ generativeai = { group = "com.google.ai.client.generativeai", name = "generative
 
 # Security
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+
+# Image Loading - Coil
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

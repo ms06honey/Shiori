@@ -49,7 +49,8 @@ interface BookmarkDao {
     @Query(
         """
         UPDATE bookmarks
-        SET title = :title, summary = :summary, category = :category, tags = :tags
+        SET title = :title, summary = :summary, category = :category, tags = :tags,
+            thumbnailUrl = :thumbnailUrl
         WHERE id = :id
         """
     )
@@ -58,8 +59,13 @@ interface BookmarkDao {
         title: String,
         summary: String,
         category: String,
-        tags: String
+        tags: String,
+        thumbnailUrl: String = ""
     )
+
+    // ── ユーザーメモの更新 ──────────────────────────────────────────
+    @Query("UPDATE bookmarks SET userMemo = :memo WHERE id = :id")
+    suspend fun updateUserMemo(id: Long, memo: String)
 
     // ── 再解析: title を "読み込み中..." にリセット ────────────────
     @Query("UPDATE bookmarks SET title = '読み込み中...', summary = '', category = '', tags = '' WHERE id = :id")

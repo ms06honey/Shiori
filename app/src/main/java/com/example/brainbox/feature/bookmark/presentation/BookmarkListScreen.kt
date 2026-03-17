@@ -174,6 +174,7 @@ private fun BookmarkCard(
             BookmarkThumbnail(
                 url = bookmark.url,
                 title = bookmark.title,
+                thumbnailUrl = bookmark.thumbnailUrl,
                 modifier = Modifier.size(56.dp)
             )
             Spacer(Modifier.width(12.dp))

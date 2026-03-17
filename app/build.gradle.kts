@@ -110,6 +110,9 @@ dependencies {
     // Security - EncryptedSharedPreferences
     implementation(libs.androidx.security.crypto)
 
+    // Image Loading - Coil
+    implementation(libs.coil.compose)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

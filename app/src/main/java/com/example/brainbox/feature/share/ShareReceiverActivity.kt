@@ -48,7 +48,23 @@ class ShareReceiverActivity : ComponentActivity() {
         finish()
     }
 
-    /** テキスト中から最初の https?:// URL を抽出 */
-    private fun String.extractUrl(): String? =
-        Regex("""https?://[^\s]+""").find(this)?.value
+    /**
+     * テキスト中から URL を優先順位付きで抽出する。
+     *
+     * 優先度:
+     * 1. x.com / twitter.com の直接ツイート URL（/status/ID 形式）
+     *    → ツイート本文に記事 URL が含まれていても誤検出しない
+     * 2. t.co 短縮 URL（X のツイート共有で多用）
+     * 3. その他の最初の https:// URL
+     */
+    private fun String.extractUrl(): String? {
+        // 優先 1: 直接ツイート URL
+        Regex("""https?://(?:www\.|mobile\.)?(?:x\.com|twitter\.com)/[^\s]+/status/\d+[^\s]*""")
+            .find(this)?.value?.let { return it }
+        // 優先 2: t.co 短縮 URL
+        Regex("""https?://t\.co/[^\s]+""")
+            .find(this)?.value?.let { return it }
+        // 優先 3: その他の最初の URL
+        return Regex("""https?://[^\s]+""").find(this)?.value
+    }
 }

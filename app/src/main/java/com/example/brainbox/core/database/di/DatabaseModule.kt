@@ -35,7 +35,9 @@ object DatabaseModule {
             AppDatabase.DATABASE_NAME
         )
             .openHelperFactory(factory)
-            // 開発中のスキーマ変更時にデータを破棄して再作成
+            // v2 → v3: userMemo / thumbnailUrl カラム追加（既存データ保持）
+            .addMigrations(AppDatabase.MIGRATION_2_3)
+            // 定義されていないマイグレーションパス（v1→v3 等）への安全策
             .fallbackToDestructiveMigration(true)
             .build()
     }

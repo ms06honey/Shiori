@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 
 /**
  * PDF仕様書 §5 データモデルに準拠。
- * id / url / title / summary / category / tags / createdAt(Unix ms)
+ * id / url / title / summary / category / tags / createdAt(Unix ms) / userMemo / thumbnailUrl
  */
 @Entity(tableName = "bookmarks")
 data class BookmarkEntity(
@@ -21,5 +21,9 @@ data class BookmarkEntity(
     /** カンマ区切りシリアライズ済みタグ配列 */
     val tags: String = "",
     /** 保存日時 Unix Timestamp (ms) */
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /** ユーザーが自由に入力できるメモ */
+    val userMemo: String = "",
+    /** スクレイプで取得したサイトのサムネイル画像 URL (og:image 等) */
+    val thumbnailUrl: String = ""
 )

@@ -24,9 +24,19 @@ class BookmarkDetailViewModel @Inject constructor(
     private val _isReanalyzing = MutableStateFlow(false)
     val isReanalyzing: StateFlow<Boolean> = _isReanalyzing.asStateFlow()
 
+    /** メモ編集ダイアログの表示状態 */
+    private val _showMemoDialog = MutableStateFlow(false)
+    val showMemoDialog: StateFlow<Boolean> = _showMemoDialog.asStateFlow()
+
+    /** 編集中のメモテキスト（ダイアログ内で使用） */
+    private val _editingMemo = MutableStateFlow("")
+    val editingMemo: StateFlow<String> = _editingMemo.asStateFlow()
+
     fun load(id: Long) {
         viewModelScope.launch {
-            _bookmark.value = repository.getBookmarkById(id)
+            val b = repository.getBookmarkById(id)
+            _bookmark.value = b
+            _editingMemo.value = b?.userMemo ?: ""
         }
     }
 
@@ -43,6 +53,33 @@ class BookmarkDetailViewModel @Inject constructor(
             } finally {
                 _isReanalyzing.value = false
             }
+        }
+    }
+
+    /** メモ編集ダイアログを開く */
+    fun openMemoDialog() {
+        _editingMemo.value = _bookmark.value?.userMemo ?: ""
+        _showMemoDialog.value = true
+    }
+
+    /** メモ編集ダイアログを閉じる */
+    fun dismissMemoDialog() {
+        _showMemoDialog.value = false
+    }
+
+    /** 編集中のメモテキストを更新する */
+    fun onMemoTextChange(text: String) {
+        _editingMemo.value = text
+    }
+
+    /** メモを保存してダイアログを閉じる */
+    fun saveMemo() {
+        val current = _bookmark.value ?: return
+        val memoText = _editingMemo.value
+        viewModelScope.launch {
+            repository.updateUserMemo(current.id, memoText)
+            _bookmark.value = current.copy(userMemo = memoText)
+            _showMemoDialog.value = false
         }
     }
 }

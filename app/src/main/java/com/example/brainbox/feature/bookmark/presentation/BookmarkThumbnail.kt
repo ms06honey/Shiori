@@ -1,5 +1,6 @@
 package com.example.brainbox.feature.bookmark.presentation
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,16 +13,55 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
 import kotlin.math.abs
 
 /**
- * PDF仕様書 §3.3「サムネイル自動生成」に準拠。
- * URL のハッシュ値から一貫性のあるグラデーション + タイトル頭文字を表示する。
+ * サムネイルコンポーザブル。
+ * - thumbnailUrl が非空 → Coil で実際の画像を読み込む（失敗/読み込み中はグラデーションにフォールバック）
+ * - thumbnailUrl が空   → URL ハッシュ値から一貫性のあるグラデーション + タイトル頭文字
  */
 @Composable
 fun BookmarkThumbnail(
+    url: String,
+    title: String,
+    modifier: Modifier = Modifier,
+    thumbnailUrl: String = ""
+) {
+    val shape = RoundedCornerShape(8.dp)
+
+    if (thumbnailUrl.isNotBlank()) {
+        val painter = rememberAsyncImagePainter(model = thumbnailUrl)
+        val isSuccess = painter.state is AsyncImagePainter.State.Success
+
+        Box(modifier = modifier.clip(shape)) {
+            if (isSuccess) {
+                Image(
+                    painter = painter,
+                    contentDescription = title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                GradientThumbnail(url = url, title = title, modifier = Modifier.fillMaxSize())
+            }
+        }
+    } else {
+        GradientThumbnail(
+            url = url,
+            title = title,
+            modifier = modifier.clip(shape)
+        )
+    }
+}
+
+/** URL ハッシュ値グラデーション + 頭文字サムネイル */
+@Composable
+private fun GradientThumbnail(
     url: String,
     title: String,
     modifier: Modifier = Modifier
@@ -33,7 +73,6 @@ fun BookmarkThumbnail(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
             .background(Brush.linearGradient(listOf(startColor, endColor))),
         contentAlignment = Alignment.Center
     ) {
@@ -62,4 +101,3 @@ private fun urlToGradientColors(url: String): Pair<Color, Color> {
     )
     return palettes[abs(url.hashCode()) % palettes.size]
 }
-

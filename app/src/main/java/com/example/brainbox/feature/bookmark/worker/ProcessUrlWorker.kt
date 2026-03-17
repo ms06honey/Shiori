@@ -184,7 +184,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                 }
 
                 // ── Step 6: DB 更新 ──────────────────────────────────
-                repository.updateAiMetadata(bookmarkId, title, summary, category, tags)
+                repository.updateAiMetadata(bookmarkId, title, summary, category, tags,
+                    thumbnailUrl = scraped?.imageUrl ?: "")
 
                 // ── Step 7: 完了通知 ─────────────────────────────────
                 showResultNotification(title)
@@ -198,7 +199,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                     scraped?.title?.ifBlank { url } ?: url,
                     scraped?.description ?: "",
                     "未分類",
-                    ""
+                    "",
+                    thumbnailUrl = scraped?.imageUrl ?: ""
                 )
                 showResultNotification(scraped?.title ?: url)
                 Result.success()
