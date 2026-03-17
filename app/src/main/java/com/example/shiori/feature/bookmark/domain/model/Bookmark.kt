@@ -1,8 +1,8 @@
 ﻿package com.example.shiori.feature.bookmark.domain.model
 
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 data class Bookmark(
     val id: Long = 0,
@@ -25,6 +25,12 @@ data class Bookmark(
 )
 
 private const val AI_POINTS_MARKER = "[[BB_AI_POINTS]]"
+
+/**
+ * Markdown 用日付フォーマッタ。DateTimeFormatter はイミュータブルでスレッドセーフ（minSdk 26+）。
+ */
+private val MARKDOWN_DATE_FORMATTER: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneId.systemDefault())
 
 data class BookmarkAiSummary(
     val overview: String,
@@ -110,7 +116,7 @@ fun Bookmark.toMarkdown(): String = buildString {
     if (tags.isNotEmpty()) appendLine("**タグ**: ${tags.joinToString(", ")}")
     if (videoUrl.isNotBlank()) appendLine("**動画**: $videoUrl")
     if (localVideoPath.isNotBlank()) appendLine("**ローカル動画**: $localVideoPath")
-    val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(createdAt))
+    val dateStr = MARKDOWN_DATE_FORMATTER.format(Instant.ofEpochMilli(createdAt))
     appendLine("**保存日**: $dateStr")
 
     // サマリー

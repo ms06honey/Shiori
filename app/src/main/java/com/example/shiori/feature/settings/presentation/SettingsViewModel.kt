@@ -57,7 +57,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    // ...existing code...
 
     fun onApiKeyChange(value: String) {
         _uiState.update { it.copy(apiKeyInput = value, isSaved = false) }
@@ -111,20 +110,16 @@ class SettingsViewModel @Inject constructor(
 
     /**
      * しきい値入力の編集完了時に呼ぶ。
-     * 無効値（空/0）は現在保存済みの値へ戻し、有効値は正規化して反映する。
+     * 有効値（1以上）なら保存し、いずれの場合も保存済みの値を入力欄に同期する。
      */
     fun commitMinImageSizeThresholdInput() {
-        val currentInput = _uiState.value.minImageSizeThresholdInput
-        val parsed = currentInput.toIntOrNull()
+        val parsed = _uiState.value.minImageSizeThresholdInput.toIntOrNull()
         if (parsed != null && parsed > 0) {
             encryptedPrefsManager.setMinImageSizeThresholdPx(parsed)
-            _uiState.update {
-                it.copy(minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString())
-            }
-        } else {
-            _uiState.update {
-                it.copy(minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString())
-            }
+        }
+        // 有効値・無効値どちらの場合も保存済みの値に入力欄を同期する
+        _uiState.update {
+            it.copy(minImageSizeThresholdInput = encryptedPrefsManager.getMinImageSizeThresholdPx().toString())
         }
     }
 

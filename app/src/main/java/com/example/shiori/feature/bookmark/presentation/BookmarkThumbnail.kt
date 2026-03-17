@@ -20,7 +20,6 @@ import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.example.shiori.core.scraper.WebScraper
 import java.io.File
-import kotlin.math.abs
 
 /**
  * サムネイルコンポーザブル。
@@ -157,5 +156,7 @@ private fun urlToGradientColors(url: String): Pair<Color, Color> {
         Color(0xFF96FBC4) to Color(0xFFF9F586),
         Color(0xFFFC466B) to Color(0xFF3F5EFB),
     )
-    return palettes[abs(url.hashCode()) % palettes.size]
+    // abs(Int.MIN_VALUE) == Int.MIN_VALUE（負値）となるオーバーフローを避けるため
+    // ビット AND で符号ビットをゼロにしてから剰余を取る
+    return palettes[(url.hashCode() and Int.MAX_VALUE) % palettes.size]
 }

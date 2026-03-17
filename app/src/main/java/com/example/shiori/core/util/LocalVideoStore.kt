@@ -2,6 +2,7 @@ package com.example.shiori.core.util
 
 import android.content.Context
 import android.util.Log
+import com.example.shiori.core.scraper.WebScraper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -110,7 +111,7 @@ class LocalVideoStore @Inject constructor(
     ): String? {
         val requestBuilder = Request.Builder()
             .url(url)
-            .header("User-Agent", LocalImageStoreUserAgent.CHROME_UA)
+            .header("User-Agent", WebScraper.CHROME_UA)
             .header("Accept", "video/mp4,video/*;q=0.95,application/octet-stream;q=0.8,*/*;q=0.5")
 
         if (!referer.isNullOrBlank()) {
@@ -170,15 +171,5 @@ class LocalVideoStore @Inject constructor(
             else -> "mp4"
         }
     }
-}
-
-/**
- * LocalVideoStore と LocalImageStore で同じ UA を使うための簡易定義。
- */
-private object LocalImageStoreUserAgent {
-    const val CHROME_UA =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/126.0.0.0 Safari/537.36"
 }
 

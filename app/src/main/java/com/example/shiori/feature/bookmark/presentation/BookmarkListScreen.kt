@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -109,6 +110,7 @@ fun BookmarkListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .dismissSelectionMenuOnTap()
         ) {
             // ── 検索バー（macOS Spotlight 風） ───────────────────────
             TextField(
@@ -276,21 +278,25 @@ private fun BookmarkCard(
             )
             Spacer(Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = bookmark.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (aiSummary.overview.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
+                SelectionContainer {
                     Text(
-                        text = aiSummary.overview,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = bookmark.title,
+                        style = MaterialTheme.typography.titleSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+                if (aiSummary.overview.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    SelectionContainer {
+                        Text(
+                            text = aiSummary.overview,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Spacer(Modifier.height(8.dp))
                 // タグ + カテゴリ + 日付 ── FlowRow で横幅に収まらない場合に折り返す
@@ -304,12 +310,14 @@ private fun BookmarkCard(
                     bookmark.tags.forEach { tag ->
                         MacTagBadge(text = tag, isPrimary = false)
                     }
-                    Text(
-                        text = formatDate(bookmark.createdAt),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.CenterVertically)
-                    )
+                    SelectionContainer {
+                        Text(
+                            text = formatDate(bookmark.createdAt),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                        )
+                    }
                 }
             }
             // アクションボタン列（コピー + 削除）
@@ -378,7 +386,9 @@ fun MacTagBadge(text: String, isPrimary: Boolean) {
             .background(bg)
             .padding(horizontal = 10.dp, vertical = 3.dp)
     ) {
-        Text(text = text, style = MaterialTheme.typography.labelSmall, color = fg)
+        SelectionContainer {
+            Text(text = text, style = MaterialTheme.typography.labelSmall, color = fg)
+        }
     }
 }
 

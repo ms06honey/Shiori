@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.example.shiori.core.datastore.EncryptedPrefsManager
+import com.example.shiori.core.scraper.WebScraper
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,12 +53,7 @@ class LocalImageStore @Inject constructor(
                 try {
                     val requestBuilder = Request.Builder()
                         .url(url)
-                        .header(
-                            "User-Agent",
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                            "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                            "Chrome/126.0.0.0 Safari/537.36"
-                        )
+                        .header("User-Agent", WebScraper.CHROME_UA)
                         .header(
                             "Accept",
                             "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"

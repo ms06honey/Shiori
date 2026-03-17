@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -138,6 +139,7 @@ private fun DetailContent(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .dismissSelectionMenuOnTap()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -157,17 +159,21 @@ private fun DetailContent(
                     modifier = Modifier.size(72.dp)
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        bookmark.title,
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    SelectionContainer {
+                        Text(
+                            bookmark.title,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        bookmark.url,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 2
-                    )
+                    SelectionContainer {
+                        Text(
+                            bookmark.url,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -176,11 +182,13 @@ private fun DetailContent(
                         if (bookmark.category.isNotBlank()) {
                             MacTagBadge(text = bookmark.category, isPrimary = true)
                         }
-                        Text(
-                            formatDate(bookmark.createdAt),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        SelectionContainer {
+                            Text(
+                                formatDate(bookmark.createdAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
@@ -194,11 +202,13 @@ private fun DetailContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "AI サマリー",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Text(
+                            "AI サマリー",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onReanalyze, enabled = !isReanalyzing, modifier = Modifier.size(30.dp)) {
                         if (isReanalyzing) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Default.Refresh, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -206,50 +216,62 @@ private fun DetailContent(
                 }
                 Spacer(Modifier.height(6.dp))
                 when {
-                    isReanalyzing -> Text(
-                        "AIが解析中…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
+                    isReanalyzing -> SelectionContainer {
+                        Text(
+                            "AIが解析中…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
                     aiSummary.overview.isNotBlank() || aiSummary.points.isNotEmpty() -> {
                         if (aiSummary.overview.isNotBlank()) {
-                            Text(
-                                "概要",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SelectionContainer {
+                                Text(
+                                    "概要",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Spacer(Modifier.height(4.dp))
-                            Text(
-                                aiSummary.overview,
-                                style = MaterialTheme.typography.bodyMedium,
-                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
-                            )
+                            SelectionContainer {
+                                Text(
+                                    aiSummary.overview,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                                )
+                            }
                         }
 
                         if (aiSummary.points.isNotEmpty()) {
                             Spacer(Modifier.height(if (aiSummary.overview.isNotBlank()) 12.dp else 0.dp))
-                            Text(
-                                "ポイント",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            SelectionContainer {
+                                Text(
+                                    "ポイント",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                             Spacer(Modifier.height(6.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 aiSummary.points.forEach { point ->
-                                    Text(
-                                        text = "• $point",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
-                                    )
+                                    SelectionContainer {
+                                        Text(
+                                            text = "• $point",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                    else -> Text(
-                        "サマリーがありません。再解析ボタンで取得できます。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
+                    else -> SelectionContainer {
+                        Text(
+                            "サマリーがありません。再解析ボタンで取得できます。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }
@@ -258,11 +280,13 @@ private fun DetailContent(
         if (bookmark.tags.isNotEmpty()) {
             MacSection {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        "タグ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Text(
+                            "タグ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -284,11 +308,13 @@ private fun DetailContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        "メモ",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Text(
+                            "メモ",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onOpenMemoDialog, modifier = Modifier.size(30.dp)) {
                         Icon(
                             if (bookmark.userMemo.isBlank()) Icons.AutoMirrored.Filled.NoteAdd
@@ -301,13 +327,17 @@ private fun DetailContent(
                 }
                 Spacer(Modifier.height(6.dp))
                 if (bookmark.userMemo.isNotBlank()) {
-                    Text(bookmark.userMemo, style = MaterialTheme.typography.bodyMedium)
+                    SelectionContainer {
+                        Text(bookmark.userMemo, style = MaterialTheme.typography.bodyMedium)
+                    }
                 } else {
-                    Text(
-                        "メモがありません。編集ボタンで追加できます。",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                    )
+                    SelectionContainer {
+                        Text(
+                            "メモがありません。編集ボタンで追加できます。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
                 }
             }
         }
@@ -336,21 +366,25 @@ private fun DetailContent(
                         }
                     }
 
-                    Text(
-                        "動画",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Text(
+                            "動画",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        if (bookmark.localVideoPath.isNotBlank()) {
-                            "ローカル保存済みの動画を再生できます。"
-                        } else {
-                            "動画本体のローカル保存に失敗したため、リモート動画を再生します。"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    SelectionContainer {
+                        Text(
+                            if (bookmark.localVideoPath.isNotBlank()) {
+                                "ローカル保存済みの動画を再生できます。"
+                            } else {
+                                "動画本体のローカル保存に失敗したため、リモート動画を再生します。"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
                     playableUri?.let { uri ->
                         BookmarkVideoPlayer(videoUri = uri)
@@ -395,11 +429,13 @@ private fun DetailContent(
                     }
                     if (bookmark.videoUrl.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            bookmark.videoUrl,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        SelectionContainer {
+                            Text(
+                                bookmark.videoUrl,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
