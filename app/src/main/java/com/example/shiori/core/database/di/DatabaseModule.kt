@@ -37,6 +37,8 @@ object DatabaseModule {
             .openHelperFactory(factory)
             // v2 → v3: userMemo / thumbnailUrl カラム追加（既存データ保持）
             .addMigrations(AppDatabase.MIGRATION_2_3)
+            // v3 → v4: localImagePaths カラム追加（既存データ保持）
+            .addMigrations(AppDatabase.MIGRATION_3_4)
             // 定義されていないマイグレーションパス（v1→v3 等）への安全策
             .fallbackToDestructiveMigration(true)
             .build()

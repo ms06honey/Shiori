@@ -68,6 +68,20 @@
             android:foregroundServiceType="shortService"
             android:exported="false" />
 
+        <!--
+            FileProvider: filesDir/images/ 以下のローカル保存画像を
+            content:// URI として他アプリ（クリップボード、共有先）に公開する。
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

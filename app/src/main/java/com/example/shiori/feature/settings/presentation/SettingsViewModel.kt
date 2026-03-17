@@ -19,7 +19,11 @@ data class SettingsUiState(
     /** §4.2: PIN/指紋変更で Keystore が破壊された場合 true → 再設定を促す */
     val keyInvalidated: Boolean = false,
     /** 選択中の AI モデル ID */
-    val selectedModelId: String = EncryptedPrefsManager.DEFAULT_MODEL.id
+    val selectedModelId: String = EncryptedPrefsManager.DEFAULT_MODEL.id,
+    /** スクレイパーモード */
+    val scraperMode: EncryptedPrefsManager.ScraperMode = EncryptedPrefsManager.DEFAULT_SCRAPER_MODE,
+    /** サムネイル以外の全画像もローカル保存するか */
+    val saveAllImages: Boolean = false
 )
 
 @HiltViewModel
@@ -35,10 +39,14 @@ class SettingsViewModel @Inject constructor(
             it.copy(
                 isKeySet = encryptedPrefsManager.getGeminiApiKey() != null,
                 keyInvalidated = encryptedPrefsManager.wasKeyInvalidated,
-                selectedModelId = encryptedPrefsManager.getAiModelId()
+                selectedModelId = encryptedPrefsManager.getAiModelId(),
+                scraperMode = encryptedPrefsManager.getScraperMode(),
+                saveAllImages = encryptedPrefsManager.isSaveAllImages()
             )
         }
     }
+
+    // ...existing code...
 
     fun onApiKeyChange(value: String) {
         _uiState.update { it.copy(apiKeyInput = value, isSaved = false) }
@@ -59,6 +67,16 @@ class SettingsViewModel @Inject constructor(
     fun onModelSelected(modelId: String) {
         encryptedPrefsManager.saveAiModel(modelId)
         _uiState.update { it.copy(selectedModelId = modelId) }
+    }
+
+    fun onScraperModeSelected(mode: EncryptedPrefsManager.ScraperMode) {
+        encryptedPrefsManager.saveScraperMode(mode)
+        _uiState.update { it.copy(scraperMode = mode) }
+    }
+
+    fun onSaveAllImagesChanged(enabled: Boolean) {
+        encryptedPrefsManager.setSaveAllImages(enabled)
+        _uiState.update { it.copy(saveAllImages = enabled) }
     }
 
     fun clearSaved() = _uiState.update { it.copy(isSaved = false) }

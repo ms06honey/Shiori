@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NoteAdd
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -20,12 +21,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.util.formatDate
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
+import com.example.shiori.feature.bookmark.domain.model.toMarkdown
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -39,11 +44,15 @@ fun BookmarkDetailScreen(
     val showMemoDialog by viewModel.showMemoDialog.collectAsStateWithLifecycle()
     val editingMemo by viewModel.editingMemo.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(bookmarkId) { viewModel.load(bookmarkId) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("詳細", style = MaterialTheme.typography.titleMedium) },
@@ -55,6 +64,13 @@ fun BookmarkDetailScreen(
                 },
                 actions = {
                     val b = bookmark ?: return@TopAppBar
+                    // MD コピーボタン
+                    IconButton(onClick = {
+                        clipboardManager.setText(AnnotatedString(b.toMarkdown()))
+                        scope.launch { snackbarHostState.showSnackbar("MDをコピーしました") }
+                    }) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "MDとしてコピー")
+                    }
                     IconButton(onClick = { viewModel.reanalyze() }, enabled = !isReanalyzing) {
                         if (isReanalyzing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Default.Refresh, contentDescription = "再解析")
@@ -79,6 +95,7 @@ fun BookmarkDetailScreen(
                 isReanalyzing = isReanalyzing,
                 onReanalyze = { viewModel.reanalyze() },
                 onOpenMemoDialog = { viewModel.openMemoDialog() },
+                onMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } },
                 modifier = Modifier.padding(innerPadding)
             )
         }
@@ -103,6 +120,7 @@ private fun DetailContent(
     isReanalyzing: Boolean,
     onReanalyze: () -> Unit,
     onOpenMemoDialog: () -> Unit,
+    onMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -122,6 +140,7 @@ private fun DetailContent(
                     url = bookmark.url,
                     title = bookmark.title,
                     thumbnailUrl = bookmark.thumbnailUrl,
+                    localThumbnailPath = bookmark.localImagePaths.firstOrNull() ?: "",
                     modifier = Modifier.size(72.dp)
                 )
                 Column(modifier = Modifier.weight(1f)) {
@@ -246,6 +265,18 @@ private fun DetailContent(
                         "メモがありません。編集ボタンで追加できます。",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+
+        // ── 保存済み画像ギャラリー ──────────────────────────────────
+        if (bookmark.localImagePaths.isNotEmpty()) {
+            MacSection {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    ImageGallerySection(
+                        imagePaths = bookmark.localImagePaths,
+                        onMessage = onMessage
                     )
                 }
             }

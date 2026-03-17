@@ -33,6 +33,8 @@ class EncryptedPrefsManager @Inject constructor(
         private const val KEY_DB_PASSPHRASE = "db_passphrase"
         private const val KEY_GEMINI_API_KEY = "gemini_api_key"
         private const val KEY_AI_MODEL = "ai_model"
+        private const val KEY_SCRAPER_MODE = "scraper_mode"
+        private const val KEY_SAVE_ALL_IMAGES = "save_all_images"
 
         /** 選択可能な AI モデル一覧 */
         val AVAILABLE_MODELS = listOf(
@@ -40,10 +42,24 @@ class EncryptedPrefsManager @Inject constructor(
             AiModel("gemma-3-12b-it",                "Gemma 3 12B",           "高品質・オープンモデル"),
         )
         val DEFAULT_MODEL = AVAILABLE_MODELS.first()
+
+        /** デフォルトのスクレイパーモード（SNS クローラー UA が OGP 取得率高）*/
+        val DEFAULT_SCRAPER_MODE = ScraperMode.CRAWLER_UA
     }
 
     /** AI モデル定義 */
     data class AiModel(val id: String, val displayName: String, val description: String)
+
+    /**
+     * スクレイパーモード。
+     * - CRAWLER_UA : Facebook クローラー UA を使用。SNS プレビュー用に OGP を最適化した
+     *                サイトで og:image の取得率が高い。X/Twitter は vxtwitter API を優先使用。
+     * - CHROME_UA  : PC Chrome を偽装。JavaScript ヘビーなサイトでのフォールバック率が低い。
+     */
+    enum class ScraperMode(val displayName: String, val description: String) {
+        CRAWLER_UA("SNS クローラー UA", "OGP 画像・X 投稿の取得率が高い（推奨）"),
+        CHROME_UA ("Chrome UA",        "PC Chrome を偽装。一般サイトとの互換性重視")
+    }
 
     /**
      * 端末の生体認証/PIN 変更で Keystore の鍵が破壊された場合に true。
@@ -146,4 +162,27 @@ class EncryptedPrefsManager @Inject constructor(
     fun getAiModelId(): String {
         return prefs.getString(KEY_AI_MODEL, null) ?: DEFAULT_MODEL.id
     }
+
+    /** スクレイパーモードを保存 */
+    fun saveScraperMode(mode: ScraperMode) {
+        prefs.edit().putString(KEY_SCRAPER_MODE, mode.name).apply()
+    }
+
+    /** スクレイパーモードを取得（未設定ならデフォルト） */
+    fun getScraperMode(): ScraperMode {
+        val name = prefs.getString(KEY_SCRAPER_MODE, null) ?: return DEFAULT_SCRAPER_MODE
+        return runCatching { ScraperMode.valueOf(name) }.getOrDefault(DEFAULT_SCRAPER_MODE)
+    }
+
+    /**
+     * 「全画像をローカル保存する」設定を保存。
+     * デフォルト: false（サムネイル1枚のみ使用）
+     */
+    fun setSaveAllImages(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_SAVE_ALL_IMAGES, enabled).apply()
+    }
+
+    /** 「全画像をローカル保存する」設定を取得 */
+    fun isSaveAllImages(): Boolean =
+        prefs.getBoolean(KEY_SAVE_ALL_IMAGES, false)
 }

@@ -2,6 +2,7 @@
 
 import android.net.Uri
 import android.util.Log
+import com.example.shiori.core.datastore.EncryptedPrefsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -21,8 +22,10 @@ data class ScrapedContent(
     val description: String,
     /** ノイズ除去後の本文テキスト（SPA では空になる可能性あり） */
     val mainText: String,
-    /** og:image → 最初の有効な <img> の順で取得したサムネイル URL */
+    /** og:image → 最初の有効な <img> の順で取得したサムネイル URL（先頭 = allImageUrls[0]） */
     val imageUrl: String = "",
+    /** ページ内で検出したすべての有効な画像 URL（先頭がサムネイル優先度最高） */
+    val allImageUrls: List<String> = emptyList(),
 )
 
 /**
@@ -31,25 +34,44 @@ data class ScrapedContent(
  */
 @Singleton
 class WebScraper @Inject constructor(
-    private val okHttpClient: OkHttpClient
+    private val okHttpClient: OkHttpClient,
+    private val encryptedPrefsManager: EncryptedPrefsManager
 ) {
 
     companion object {
         private const val TIMEOUT_MS = 15_000
         /**
-         * 全リクエスト共通 UA。
-         * ボット UA (例: "compatible; SHIORI/1.0") では多くのサイトが
-         * 簡易 HTML / CAPTCHA / 403 を返し、og:image が取得できない。
-         * PC Chrome を偽装することで通常の HTML を取得する。
+         * PC Chrome を偽装した UA。通常ブラウザとして扱われる。
          */
         const val CHROME_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
             "Chrome/126.0.0.0 Safari/537.36"
+
+        /**
+         * SNS クローラー UA（Facebook externalhit）。
+         * 多くのサイトが SNS クローラーを検知して OGP メタタグを最適化して返すため、
+         * og:image の取得成功率が Chrome UA より高い。
+         */
+        const val CRAWLER_UA =
+            "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+
         private const val MAX_CONTENT_CHARS = 3_000
         private const val MAX_TWEET_REDIRECT_HOPS = 5
+        /** 1 ページから収集する最大画像枚数 */
+        private const val MAX_ALL_IMAGES = 20
         private const val TAG = "WebScraper"
     }
+
+    /**
+     * 設定されたスクレイパーモードに応じた UA 文字列を返す。
+     * SharedPreferences 読み取りは高速なので毎回読んで問題ない。
+     */
+    private val activeUserAgent: String
+        get() = when (encryptedPrefsManager.getScraperMode()) {
+            EncryptedPrefsManager.ScraperMode.CRAWLER_UA -> CRAWLER_UA
+            EncryptedPrefsManager.ScraperMode.CHROME_UA  -> CHROME_UA
+        }
 
     suspend fun scrape(url: String, sharedText: String? = null): Result<ScrapedContent> = withContext(Dispatchers.IO) {
         runCatching {
@@ -70,12 +92,13 @@ class WebScraper @Inject constructor(
             Log.d(TAG, "scrape: url=$url xTweetUrl=$xTweetUrl")
 
             // ── ② 通常 HTML スクレイプ（X 以外のサイト用） ───────────────
-            val finalUrl = resolveFinalUrl(url)
+            val ua = activeUserAgent
+            val finalUrl = resolveFinalUrl(url, ua)
             val cleanedSharedText = cleanSharedText(sharedText, finalUrl)
 
             val doc = runCatching {
                 Jsoup.connect(finalUrl)
-                    .userAgent(CHROME_UA)
+                    .userAgent(ua)
                     .timeout(TIMEOUT_MS)
                     .maxBodySize(0)
                     .followRedirects(true)
@@ -86,7 +109,7 @@ class WebScraper @Inject constructor(
             val htmlContent = doc?.let { extractFromDocument(it) }
             val isBlocked = htmlContent?.let(::looksLikeBlockedPage) == true
 
-            // ── ③ X コンテンツ取得（oEmbed 優先 + Syndication フォールバック） ──
+            // ── ③ X コンテンツ取得（モードにより優先 API が変わる） ─────
             val xFallback = xTweetUrl?.let { fetchXContent(it, cleanedSharedText) }
 
             mergeContent(
@@ -224,13 +247,105 @@ class WebScraper @Inject constructor(
     /**
      * X ツイートのコンテンツを取得する。
      *
-     * 1. Twitter oEmbed API（公式）を優先
-     * 2. 失敗した場合は Syndication API（非公式）でフォールバック
+     * CRAWLER_UA モード:
+     *   1. vxtwitter API（高信頼・画像 URL も取得可）
+     *   2. Twitter oEmbed API（公式）
+     *   3. Syndication API（非公式フォールバック）
+     *
+     * CHROME_UA モード:
+     *   1. Twitter oEmbed API
+     *   2. Syndication API
      */
     private fun fetchXContent(tweetUrl: String, cleanedSharedText: String?): ScrapedContent? {
-        Log.d(TAG, "fetchXContent: $tweetUrl")
-        return fetchOEmbed(tweetUrl)
-            ?: fetchSyndicationApi(tweetUrl, cleanedSharedText)
+        Log.d(TAG, "fetchXContent: $tweetUrl mode=${encryptedPrefsManager.getScraperMode()}")
+        return when (encryptedPrefsManager.getScraperMode()) {
+            EncryptedPrefsManager.ScraperMode.CRAWLER_UA ->
+                fetchVxTwitter(tweetUrl)
+                    ?: fetchOEmbed(tweetUrl)
+                    ?: fetchSyndicationApi(tweetUrl, cleanedSharedText)
+            EncryptedPrefsManager.ScraperMode.CHROME_UA ->
+                fetchOEmbed(tweetUrl)
+                    ?: fetchSyndicationApi(tweetUrl, cleanedSharedText)
+        }
+    }
+
+    /**
+     * vxtwitter API でツイートデータを取得する（CRAWLER_UA モード優先）。
+     * https://api.vxtwitter.com/Twitter/status/{id}
+     *
+     * レスポンス例:
+     * {
+     *   "text": "...",
+     *   "user_name": "表示名",
+     *   "user_screen_name": "username",
+     *   "media_extended": [{"url": "https://...", "type": "image"}]
+     * }
+     */
+    private fun fetchVxTwitter(tweetUrl: String): ScrapedContent? {
+        val tweetId = extractTweetId(tweetUrl) ?: run {
+            Log.w(TAG, "vxtwitter: tweet ID not found in url=$tweetUrl")
+            return null
+        }
+        Log.d(TAG, "vxtwitter: tweetId=$tweetId")
+
+        val request = Request.Builder()
+            .url("https://api.vxtwitter.com/Twitter/status/$tweetId")
+            .header("User-Agent", CHROME_UA)
+            .header("Accept", "application/json")
+            .get()
+            .build()
+
+        return runCatching {
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "vxtwitter: HTTP ${response.code} for tweetId=$tweetId")
+                    return@use null
+                }
+                val body = response.body?.string().orEmpty()
+                if (body.isBlank()) return@use null
+
+                val json = runCatching { JSONObject(body) }.getOrNull() ?: return@use null
+
+                // エラーレスポンス判定
+                if (json.optString("error").isNotBlank()) {
+                    Log.w(TAG, "vxtwitter: error=${json.optString("error")}")
+                    return@use null
+                }
+
+                val text = json.optString("text").trim()
+                val userName = json.optString("user_name").trim()
+                val userScreenName = json.optString("user_screen_name").trim()
+
+                val title = when {
+                    userName.isNotBlank() && userScreenName.isNotBlank() ->
+                        "$userName (@$userScreenName) の投稿"
+                    userName.isNotBlank() -> "$userName の投稿"
+                    else -> "Xの投稿"
+                }
+
+                // media_extended から全画像 URL を取得
+                val allImageUrls = runCatching {
+                    json.optJSONArray("media_extended")?.let { arr ->
+                        (0 until arr.length()).mapNotNull { i ->
+                            arr.getJSONObject(i).optString("url").takeIf { it.isNotBlank() }
+                        }
+                    } ?: emptyList()
+                }.getOrDefault(emptyList())
+                val imageUrl = allImageUrls.firstOrNull() ?: ""
+
+                Log.d(TAG, "vxtwitter: ok title=$title text=${text.take(60)} images=${allImageUrls.size}")
+                ScrapedContent(
+                    title = title,
+                    description = text,
+                    mainText = text,
+                    imageUrl = imageUrl,
+                    allImageUrls = allImageUrls
+                )
+            }
+        }.getOrElse { e ->
+            Log.e(TAG, "vxtwitter: exception for tweetId=$tweetId: ${e.message}")
+            null
+        }
     }
 
     /**
@@ -352,18 +467,22 @@ class WebScraper @Inject constructor(
                 }
                 val baseText = text.ifBlank { cleanedSharedText.orEmpty() }
 
-                val tweetImageUrl = runCatching {
-                    json.optJSONArray("mediaDetails")
-                        ?.getJSONObject(0)
-                        ?.optString("media_url_https").orEmpty()
-                }.getOrDefault("")
+                val allTweetImageUrls = runCatching {
+                    json.optJSONArray("mediaDetails")?.let { arr ->
+                        (0 until arr.length()).mapNotNull { i ->
+                            arr.getJSONObject(i).optString("media_url_https").takeIf { it.isNotBlank() }
+                        }
+                    } ?: emptyList()
+                }.getOrDefault(emptyList())
+                val tweetImageUrl = allTweetImageUrls.firstOrNull() ?: ""
 
-                Log.d(TAG, "syndication: ok title=$title")
+                Log.d(TAG, "syndication: ok title=$title images=${allTweetImageUrls.size}")
                 ScrapedContent(
                     title = title,
                     description = baseText,
                     mainText = baseText,
-                    imageUrl = tweetImageUrl
+                    imageUrl = tweetImageUrl,
+                    allImageUrls = allTweetImageUrls
                 )
             }
         }.getOrElse { e ->
@@ -389,11 +508,11 @@ class WebScraper @Inject constructor(
     // 汎用 HTML スクレイプ
     // ────────────────────────────────────────────────────────────────────
 
-    private fun resolveFinalUrl(url: String): String {
+    private fun resolveFinalUrl(url: String, ua: String = CHROME_UA): String {
         return runCatching {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", CHROME_UA)
+                .header("User-Agent", ua)
                 .get()
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
@@ -409,32 +528,31 @@ class WebScraper @Inject constructor(
         val description = doc.select("meta[property=og:description]").attr("content")
             .ifBlank { doc.select("meta[name=description]").attr("content") }
 
-        val imageUrl = extractImageUrl(doc)
+        val allImageUrls = extractAllImageUrls(doc)
+        val imageUrl = allImageUrls.firstOrNull() ?: ""
 
         val mainText = extractMainText(doc)
         return ScrapedContent(
             title = title,
             description = description,
             mainText = mainText,
-            imageUrl = imageUrl
+            imageUrl = imageUrl,
+            allImageUrls = allImageUrls
         )
     }
 
     /**
-     * ページから最適なサムネイル画像 URL を取得する。
+     * ページ内のすべての有効な画像 URL を収集して返す。
+     * 先頭要素が最優先のサムネイル候補（OGP メタタグ優先）。
      *
      * 優先度:
      *  1. OGP / Twitter Card メタタグ（複数セレクタで網羅）
-     *  2. <link rel="image_src"> (古い規格だが一部サイトで使用)
+     *  2. <link rel="image_src">
      *  3. ページ内の有意な <img> タグ（ロゴ・アバター等を除外）
-     *
-     * 取得した URL は正規化する:
-     *  - protocol-relative (`//cdn.example.com/...`) → `https://...`
-     *  - 相対パス (`/images/thumb.jpg`) → ベース URL で解決
-     *  - data: URI / SVG は除外
      */
-    private fun extractImageUrl(doc: Document): String {
+    private fun extractAllImageUrls(doc: Document): List<String> {
         val baseUri = doc.baseUri()
+        val result = mutableListOf<String>()
 
         // ── 1. メタタグ（優先度順） ──────────────────────────────────
         val metaSelectors = listOf(
@@ -453,44 +571,31 @@ class WebScraper @Inject constructor(
             val raw = doc.select(selector).attr(attr).trim()
             if (raw.isNotBlank()) {
                 val normalized = normalizeImageUrl(raw, baseUri)
-                if (normalized != null) {
-                    Log.d(TAG, "extractImageUrl: found via '$selector' → $normalized")
-                    return normalized
+                if (normalized != null && normalized !in result) {
+                    Log.d(TAG, "extractAllImageUrls: meta '$selector' → $normalized")
+                    result.add(normalized)
                 }
             }
         }
 
-        // ── 2. 最初の有意な <img> タグ ──────────────────────────────
-        val imgUrl = doc.select("img[src]").asSequence()
-            .mapNotNull { el ->
-                val src = el.attr("abs:src").ifBlank { el.attr("src") }
-                normalizeImageUrl(src, baseUri)
-            }
-            .filter { url ->
-                url.startsWith("https://") || url.startsWith("http://")
-            }
-            .filter { url ->
-                val lower = url.lowercase()
-                !lower.contains("logo") &&
-                !lower.contains("avatar") &&
-                !lower.contains("icon") &&
-                !lower.contains("sprite") &&
-                !lower.contains("1x1") &&
-                !lower.contains("pixel") &&
-                !lower.contains("badge") &&
-                !lower.contains("spacer") &&
-                !lower.contains("tracking") &&
-                !lower.contains(".svg") &&
-                url.length < 600
-            }
-            .firstOrNull()
-
-        if (imgUrl != null) {
-            Log.d(TAG, "extractImageUrl: found via <img> fallback → $imgUrl")
-        } else {
-            Log.d(TAG, "extractImageUrl: no image found")
+        // ── 2. すべての有意な <img> タグ ──────────────────────────────
+        doc.select("img[src]").forEach { el ->
+            val src = el.attr("abs:src").ifBlank { el.attr("src") }
+            val normalized = normalizeImageUrl(src, baseUri) ?: return@forEach
+            if (!normalized.startsWith("http")) return@forEach
+            val lower = normalized.lowercase()
+            if (lower.contains("logo") || lower.contains("avatar") ||
+                lower.contains("icon") || lower.contains("sprite") ||
+                lower.contains("1x1") || lower.contains("pixel") ||
+                lower.contains("badge") || lower.contains("spacer") ||
+                lower.contains("tracking") || lower.contains(".svg") ||
+                normalized.length >= 600
+            ) return@forEach
+            if (normalized !in result) result.add(normalized)
         }
-        return imgUrl ?: ""
+
+        Log.d(TAG, "extractAllImageUrls: found ${result.size} images")
+        return result.take(MAX_ALL_IMAGES)
     }
 
     /**
@@ -550,11 +655,17 @@ class WebScraper @Inject constructor(
             ?: xFallback?.imageUrl?.takeIf { it.isNotBlank() }
             ?: ""
 
+        val allImageUrls = primary?.allImageUrls?.takeIf { it.isNotEmpty() }
+            ?: xFallback?.allImageUrls?.takeIf { it.isNotEmpty() }
+            ?: xFallback?.imageUrl?.takeIf { it.isNotBlank() }?.let { listOf(it) }
+            ?: emptyList()
+
         return ScrapedContent(
             title = title,
             description = description,
             mainText = mainText,
-            imageUrl = imageUrl
+            imageUrl = imageUrl,
+            allImageUrls = allImageUrls
         )
     }
 

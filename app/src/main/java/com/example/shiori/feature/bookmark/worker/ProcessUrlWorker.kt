@@ -12,6 +12,7 @@ import com.example.shiori.R
 import com.example.shiori.core.datastore.EncryptedPrefsManager
 import com.example.shiori.core.scraper.ScrapedContent
 import com.example.shiori.core.scraper.WebScraper
+import com.example.shiori.core.util.LocalImageStore
 import com.example.shiori.core.util.NotificationConstants
 import com.example.shiori.core.util.NotificationIds
 import com.example.shiori.feature.bookmark.domain.repository.BookmarkRepository
@@ -40,7 +41,8 @@ class ProcessUrlWorker @AssistedInject constructor(
     @Assisted workerParams: WorkerParameters,
     private val repository: BookmarkRepository,
     private val webScraper: WebScraper,
-    private val encryptedPrefsManager: EncryptedPrefsManager
+    private val encryptedPrefsManager: EncryptedPrefsManager,
+    private val localImageStore: LocalImageStore
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -124,9 +126,25 @@ class ProcessUrlWorker @AssistedInject constructor(
 
         return withContext(Dispatchers.IO) {
             var scraped: ScrapedContent? = null
+            var localImagePathsStr = ""
             try {
                 // ── Step 3 & 4: スクレイプ ────────────────────────────
                 scraped = webScraper.scrape(url, sharedText).getOrNull()
+
+                // ── Step 4.5: 画像をローカルに保存 ───────────────────
+                // 先頭1枚（サムネイル用）は常に保存し、2枚目以降は設定で切り替える
+                val imageUrlsToDownload = scraped?.allImageUrls?.let { urls ->
+                    if (encryptedPrefsManager.isSaveAllImages()) urls else urls.take(1)
+                }.orEmpty()
+
+                val localPaths: List<String> = if (imageUrlsToDownload.isNotEmpty()) {
+                    Log.d(TAG, "Downloading ${imageUrlsToDownload.size} images for bookmarkId=$bookmarkId")
+                    localImageStore.downloadAll(bookmarkId, imageUrlsToDownload)
+                } else {
+                    emptyList()
+                }
+                localImagePathsStr = localPaths.joinToString(",")
+                Log.d(TAG, "Saved ${localPaths.size} images locally for bookmarkId=$bookmarkId")
 
                 // ── Step 5: Gemini 呼び出し ───────────────────────────
                 val apiKey = encryptedPrefsManager.getGeminiApiKey().toValidApiKey()
@@ -185,7 +203,8 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 // ── Step 6: DB 更新 ──────────────────────────────────
                 repository.updateAiMetadata(bookmarkId, title, summary, category, tags,
-                    thumbnailUrl = scraped?.imageUrl ?: "")
+                    thumbnailUrl = scraped?.imageUrl ?: "",
+                    localImagePaths = localImagePathsStr)
 
                 // ── Step 7: 完了通知 ─────────────────────────────────
                 showResultNotification(title)
@@ -200,7 +219,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                     scraped?.description ?: "",
                     "未分類",
                     "",
-                    thumbnailUrl = scraped?.imageUrl ?: ""
+                    thumbnailUrl = scraped?.imageUrl ?: "",
+                    localImagePaths = localImagePathsStr
                 )
                 showResultNotification(scraped?.title ?: url)
                 Result.success()

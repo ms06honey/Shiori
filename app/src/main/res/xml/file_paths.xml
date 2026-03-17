@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+        context.filesDir/images/** を content:// URI として公開する。
+        LocalImageStore が保存した画像をクリップボードや他アプリと共有するために使用。
+    -->
+    <files-path
+        name="local_images"
+        path="images/" />
+</paths>
+

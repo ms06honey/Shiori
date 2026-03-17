@@ -25,5 +25,7 @@ data class BookmarkEntity(
     /** ユーザーが自由に入力できるメモ */
     val userMemo: String = "",
     /** スクレイプで取得したサイトのサムネイル画像 URL (og:image 等) */
-    val thumbnailUrl: String = ""
+    val thumbnailUrl: String = "",
+    /** ローカルに保存した画像ファイルの絶対パスをカンマ区切りで格納（先頭がサムネイル用） */
+    val localImagePaths: String = ""
 )

@@ -19,34 +19,53 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.example.shiori.core.scraper.WebScraper
+import java.io.File
 import kotlin.math.abs
 
 /**
  * サムネイルコンポーザブル。
- * - thumbnailUrl が非空 → Coil で実際の画像を読み込む（失敗/読み込み中はグラデーションにフォールバック）
- * - thumbnailUrl が空   → URL ハッシュ値から一貫性のあるグラデーション + タイトル頭文字
+ * 優先度: localThumbnailPath（ローカルファイル）> thumbnailUrl（リモート URL）> グラデーション
  */
 @Composable
 fun BookmarkThumbnail(
     url: String,
     title: String,
     modifier: Modifier = Modifier,
-    thumbnailUrl: String = ""
+    thumbnailUrl: String = "",
+    /** ローカル保存された先頭画像の絶対パス。存在する場合はリモート URL より優先される */
+    localThumbnailPath: String = ""
 ) {
     val shape = MaterialTheme.shapes.medium // 12dp — macOS 風角丸
 
-    if (thumbnailUrl.isNotBlank()) {
+    // ローカルファイルが存在すればそれを使い、なければリモート URL を使う
+    val imageData: Any? = remember(localThumbnailPath, thumbnailUrl) {
+        when {
+            localThumbnailPath.isNotBlank() -> {
+                val file = File(localThumbnailPath)
+                if (file.exists()) file else null
+            }
+            else -> null
+        }
+    }
+    val hasImage = imageData != null || thumbnailUrl.isNotBlank()
+
+    if (hasImage) {
         val context = LocalContext.current
-        val imageRequest = remember(thumbnailUrl) {
-            ImageRequest.Builder(context)
-                .data(thumbnailUrl)
-                .addHeader("User-Agent", WebScraper.CHROME_UA)
-                .addHeader("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-                .addHeader("Referer", url)
+        val imageRequest = remember(localThumbnailPath, thumbnailUrl) {
+            val data: Any = imageData ?: thumbnailUrl
+            val builder = ImageRequest.Builder(context)
+                .data(data)
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .memoryCachePolicy(CachePolicy.ENABLED)
                 .crossfade(300)
-                .build()
+            // リモート URL の場合のみヘッダーを付与（File には不要）
+            if (imageData == null) {
+                builder
+                    .addHeader("User-Agent", WebScraper.CHROME_UA)
+                    .addHeader("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                    .addHeader("Referer", url)
+            }
+            builder.build()
         }
 
         Box(modifier = modifier.clip(shape)) {

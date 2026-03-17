@@ -50,7 +50,7 @@ interface BookmarkDao {
         """
         UPDATE bookmarks
         SET title = :title, summary = :summary, category = :category, tags = :tags,
-            thumbnailUrl = :thumbnailUrl
+            thumbnailUrl = :thumbnailUrl, localImagePaths = :localImagePaths
         WHERE id = :id
         """
     )
@@ -60,7 +60,8 @@ interface BookmarkDao {
         summary: String,
         category: String,
         tags: String,
-        thumbnailUrl: String = ""
+        thumbnailUrl: String = "",
+        localImagePaths: String = ""
     )
 
     // ── ユーザーメモの更新 ──────────────────────────────────────────

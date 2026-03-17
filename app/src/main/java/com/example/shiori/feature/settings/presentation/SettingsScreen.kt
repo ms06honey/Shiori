@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.datastore.EncryptedPrefsManager
+import com.example.shiori.core.datastore.EncryptedPrefsManager.ScraperMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -180,6 +181,77 @@ fun SettingsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            // ── スクレイパーモード ──────────────────────────────────
+            SettingsSection(title = "スクレイパーモード") {
+                ScraperMode.entries.forEachIndexed { index, mode ->
+                    if (index > 0) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                    val selected = uiState.scraperMode == mode
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = selected,
+                            onClick = { viewModel.onScraperModeSelected(mode) },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = MaterialTheme.colorScheme.primary
+                            )
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(mode.displayName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                mode.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (selected) {
+                            Icon(
+                                Icons.Default.CheckCircle, null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── 画像保存 ───────────────────────────────────────────
+            SettingsSection(title = "画像保存") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("サムネイル以外の画像も保存", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "先頭1枚は常に保存し、2枚目以降の画像も端末に保存するかを切り替えます",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = uiState.saveAllImages,
+                        onCheckedChange = viewModel::onSaveAllImagesChanged,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+                            checkedTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
                 }
             }
 

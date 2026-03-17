@@ -24,7 +24,8 @@ interface BookmarkRepository {
         summary: String,
         category: String,
         tags: String,
-        thumbnailUrl: String = ""
+        thumbnailUrl: String = "",
+        localImagePaths: String = ""
     )
     /** 再解析のため既存ブックマークを "読み込み中..." 状態にリセットする */
     suspend fun resetBookmarkToProcessing(id: Long)

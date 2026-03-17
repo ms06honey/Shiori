@@ -24,12 +24,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.util.formatDate
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
+import com.example.shiori.feature.bookmark.domain.model.toMarkdown
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -40,6 +44,8 @@ fun BookmarkListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -179,7 +185,11 @@ fun BookmarkListScreen(
                         BookmarkCard(
                             bookmark = bookmark,
                             onClick = { onNavigateToDetail(bookmark.id) },
-                            onDelete = { viewModel.deleteBookmark(bookmark.id) }
+                            onDelete = { viewModel.deleteBookmark(bookmark.id) },
+                            onCopyMarkdown = {
+                                clipboardManager.setText(AnnotatedString(bookmark.toMarkdown()))
+                                scope.launch { snackbarHostState.showSnackbar("MDをコピーしました") }
+                            }
                         )
                     }
                     // 末尾にFABと被らないようスペーサー
@@ -232,7 +242,12 @@ private fun MacPillChip(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BookmarkCard(bookmark: Bookmark, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun BookmarkCard(
+    bookmark: Bookmark,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+    onCopyMarkdown: () -> Unit
+) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     Card(
@@ -253,6 +268,7 @@ private fun BookmarkCard(bookmark: Bookmark, onClick: () -> Unit, onDelete: () -
                 url = bookmark.url,
                 title = bookmark.title,
                 thumbnailUrl = bookmark.thumbnailUrl,
+                localThumbnailPath = bookmark.localImagePaths.firstOrNull() ?: "",
                 modifier = Modifier.size(56.dp)
             )
             Spacer(Modifier.width(14.dp))
@@ -293,17 +309,32 @@ private fun BookmarkCard(bookmark: Bookmark, onClick: () -> Unit, onDelete: () -
                     )
                 }
             }
-            // 削除ボタン — 控えめなトーン
-            IconButton(
-                onClick = { showDeleteDialog = true },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = "削除",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            // アクションボタン列（コピー + 削除）
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                // MD コピーボタン
+                IconButton(
+                    onClick = onCopyMarkdown,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        contentDescription = "MDとしてコピー",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                // 削除ボタン
+                IconButton(
+                    onClick = { showDeleteDialog = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "削除",
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
