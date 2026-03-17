@@ -3,7 +3,9 @@ package com.example.shiori.feature.bookmark.presentation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -25,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -294,15 +297,45 @@ private fun ZoomableImage(
     Box(
         modifier = modifier
             .pointerInput(filePath) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 5f)
-                    if (scale > 1f) {
-                        offsetX += pan.x
-                        offsetY += pan.y
-                    } else {
-                        offsetX = 0f; offsetY = 0f
+                awaitEachGesture {
+                    var tracking = true
+                    while (tracking) {
+                        val event = awaitPointerEvent()
+                        val pressedChanges = event.changes.filter { it.pressed }
+
+                        if (pressedChanges.isEmpty()) {
+                            tracking = false
+                            continue
+                        }
+
+                        when {
+                            pressedChanges.size >= 2 -> {
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+
+                                scale = newScale
+                                if (newScale > 1.02f) {
+                                    offsetX += panChange.x
+                                    offsetY += panChange.y
+                                } else {
+                                    offsetX = 0f
+                                    offsetY = 0f
+                                }
+
+                                onZoomedStateChange(newScale > 1.02f)
+                                pressedChanges.forEach { it.consume() }
+                            }
+
+                            scale > 1.02f && pressedChanges.size == 1 -> {
+                                val dragAmount = pressedChanges.first().positionChange()
+                                if (dragAmount.x == 0f && dragAmount.y == 0f) continue
+                                offsetX += dragAmount.x
+                                offsetY += dragAmount.y
+                                pressedChanges.first().consume()
+                            }
+                        }
                     }
-                    onZoomedStateChange(scale > 1.02f)
                 }
             },
         contentAlignment = Alignment.Center
