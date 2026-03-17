@@ -35,17 +35,17 @@ class WebScraper @Inject constructor(
 ) {
 
     companion object {
-        private const val TIMEOUT_MS = 10_000
-        /** 通常リクエスト用 UA */
-        private const val USER_AGENT = "Mozilla/5.0 (compatible; SHIORI/1.0)"
+        private const val TIMEOUT_MS = 15_000
         /**
-         * X リダイレクト追跡用 UA。
-         * ボット判定による不正なリダイレクト先への変化を防ぐため PC ブラウザを偽装する。
+         * 全リクエスト共通 UA。
+         * ボット UA (例: "compatible; SHIORI/1.0") では多くのサイトが
+         * 簡易 HTML / CAPTCHA / 403 を返し、og:image が取得できない。
+         * PC Chrome を偽装することで通常の HTML を取得する。
          */
-        private const val CHROME_UA =
+        const val CHROME_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
             "AppleWebKit/537.36 (KHTML, like Gecko) " +
-            "Chrome/120.0.0.0 Safari/537.36"
+            "Chrome/126.0.0.0 Safari/537.36"
         private const val MAX_CONTENT_CHARS = 3_000
         private const val MAX_TWEET_REDIRECT_HOPS = 5
         private const val TAG = "WebScraper"
@@ -75,7 +75,7 @@ class WebScraper @Inject constructor(
 
             val doc = runCatching {
                 Jsoup.connect(finalUrl)
-                    .userAgent(USER_AGENT)
+                    .userAgent(CHROME_UA)
                     .timeout(TIMEOUT_MS)
                     .maxBodySize(0)
                     .followRedirects(true)
@@ -246,7 +246,7 @@ class WebScraper @Inject constructor(
             val encoded = URLEncoder.encode(tweetUrl, "UTF-8")
             val request = Request.Builder()
                 .url("https://publish.twitter.com/oembed?url=$encoded&omit_script=true")
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", CHROME_UA)
                 .get()
                 .build()
 
@@ -316,7 +316,7 @@ class WebScraper @Inject constructor(
 
         val request = Request.Builder()
             .url("https://cdn.syndication.twimg.com/tweet-result?id=$tweetId&lang=ja")
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", CHROME_UA)
             .get()
             .build()
 
@@ -393,7 +393,7 @@ class WebScraper @Inject constructor(
         return runCatching {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", USER_AGENT)
+                .header("User-Agent", CHROME_UA)
                 .get()
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
@@ -409,23 +409,7 @@ class WebScraper @Inject constructor(
         val description = doc.select("meta[property=og:description]").attr("content")
             .ifBlank { doc.select("meta[name=description]").attr("content") }
 
-        val imageUrl = runCatching {
-            doc.select("meta[property=og:image]").attr("content")
-                .ifBlank {
-                    doc.select("img[src]")
-                        .firstOrNull { el ->
-                            val src = el.attr("abs:src")
-                            src.startsWith("http") &&
-                                !src.contains("logo", ignoreCase = true) &&
-                                !src.contains("avatar", ignoreCase = true) &&
-                                !src.contains("icon", ignoreCase = true) &&
-                                !src.contains("sprite", ignoreCase = true) &&
-                                !src.contains("1x1") &&
-                                !src.contains("pixel", ignoreCase = true) &&
-                                src.length < 500
-                        }?.attr("abs:src") ?: ""
-                }
-        }.getOrDefault("")
+        val imageUrl = extractImageUrl(doc)
 
         val mainText = extractMainText(doc)
         return ScrapedContent(
@@ -434,6 +418,103 @@ class WebScraper @Inject constructor(
             mainText = mainText,
             imageUrl = imageUrl
         )
+    }
+
+    /**
+     * ページから最適なサムネイル画像 URL を取得する。
+     *
+     * 優先度:
+     *  1. OGP / Twitter Card メタタグ（複数セレクタで網羅）
+     *  2. <link rel="image_src"> (古い規格だが一部サイトで使用)
+     *  3. ページ内の有意な <img> タグ（ロゴ・アバター等を除外）
+     *
+     * 取得した URL は正規化する:
+     *  - protocol-relative (`//cdn.example.com/...`) → `https://...`
+     *  - 相対パス (`/images/thumb.jpg`) → ベース URL で解決
+     *  - data: URI / SVG は除外
+     */
+    private fun extractImageUrl(doc: Document): String {
+        val baseUri = doc.baseUri()
+
+        // ── 1. メタタグ（優先度順） ──────────────────────────────────
+        val metaSelectors = listOf(
+            "meta[property=og:image]",
+            "meta[property=og:image:secure_url]",
+            "meta[property=og:image:url]",
+            "meta[name=og:image]",
+            "meta[name=twitter:image]",
+            "meta[property=twitter:image]",
+            "meta[name=twitter:image:src]",
+            "meta[property=twitter:image:src]",
+            "link[rel=image_src]",
+        )
+        for (selector in metaSelectors) {
+            val attr = if (selector.startsWith("link")) "href" else "content"
+            val raw = doc.select(selector).attr(attr).trim()
+            if (raw.isNotBlank()) {
+                val normalized = normalizeImageUrl(raw, baseUri)
+                if (normalized != null) {
+                    Log.d(TAG, "extractImageUrl: found via '$selector' → $normalized")
+                    return normalized
+                }
+            }
+        }
+
+        // ── 2. 最初の有意な <img> タグ ──────────────────────────────
+        val imgUrl = doc.select("img[src]").asSequence()
+            .mapNotNull { el ->
+                val src = el.attr("abs:src").ifBlank { el.attr("src") }
+                normalizeImageUrl(src, baseUri)
+            }
+            .filter { url ->
+                url.startsWith("https://") || url.startsWith("http://")
+            }
+            .filter { url ->
+                val lower = url.lowercase()
+                !lower.contains("logo") &&
+                !lower.contains("avatar") &&
+                !lower.contains("icon") &&
+                !lower.contains("sprite") &&
+                !lower.contains("1x1") &&
+                !lower.contains("pixel") &&
+                !lower.contains("badge") &&
+                !lower.contains("spacer") &&
+                !lower.contains("tracking") &&
+                !lower.contains(".svg") &&
+                url.length < 600
+            }
+            .firstOrNull()
+
+        if (imgUrl != null) {
+            Log.d(TAG, "extractImageUrl: found via <img> fallback → $imgUrl")
+        } else {
+            Log.d(TAG, "extractImageUrl: no image found")
+        }
+        return imgUrl ?: ""
+    }
+
+    /**
+     * 画像 URL の正規化。
+     * - protocol-relative (`//...`) → `https://...`
+     * - 相対パス → ベース URL で解決
+     * - data: URI / 空文字 / SVG → null
+     */
+    private fun normalizeImageUrl(raw: String, baseUri: String): String? {
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return null
+        if (trimmed.startsWith("data:")) return null
+
+        return when {
+            // protocol-relative URL
+            trimmed.startsWith("//") -> "https:$trimmed"
+            // 絶対 URL
+            trimmed.startsWith("http://") || trimmed.startsWith("https://") -> trimmed
+            // 相対パス → 絶対 URL に変換
+            baseUri.isNotBlank() -> runCatching {
+                URL(URL(baseUri), trimmed).toString()
+            }.getOrNull()
+            else -> null
+        }
     }
 
     private fun looksLikeBlockedPage(content: ScrapedContent): Boolean {

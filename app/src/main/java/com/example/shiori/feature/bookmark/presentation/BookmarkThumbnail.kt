@@ -1,6 +1,5 @@
 ﻿package com.example.shiori.feature.bookmark.presentation
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
@@ -13,10 +12,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImagePainter
-import coil.compose.rememberAsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import com.example.shiori.core.scraper.WebScraper
 import kotlin.math.abs
 
 /**
@@ -34,20 +36,32 @@ fun BookmarkThumbnail(
     val shape = MaterialTheme.shapes.medium // 12dp — macOS 風角丸
 
     if (thumbnailUrl.isNotBlank()) {
-        val painter = rememberAsyncImagePainter(model = thumbnailUrl)
-        val isSuccess = painter.state is AsyncImagePainter.State.Success
+        val context = LocalContext.current
+        val imageRequest = remember(thumbnailUrl) {
+            ImageRequest.Builder(context)
+                .data(thumbnailUrl)
+                .addHeader("User-Agent", WebScraper.CHROME_UA)
+                .addHeader("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+                .addHeader("Referer", url)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .crossfade(300)
+                .build()
+        }
 
         Box(modifier = modifier.clip(shape)) {
-            if (isSuccess) {
-                Image(
-                    painter = painter,
-                    contentDescription = title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                GradientThumbnail(url = url, title = title, modifier = Modifier.fillMaxSize())
-            }
+            SubcomposeAsyncImage(
+                model = imageRequest,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                loading = {
+                    GradientThumbnail(url = url, title = title, modifier = Modifier.fillMaxSize())
+                },
+                error = {
+                    GradientThumbnail(url = url, title = title, modifier = Modifier.fillMaxSize())
+                }
+            )
         }
     } else {
         GradientThumbnail(
@@ -67,7 +81,7 @@ private fun GradientThumbnail(
 ) {
     val (startColor, endColor) = remember(url) { urlToGradientColors(url) }
     val initial = remember(title) {
-        title.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "B"
+        title.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "S"
     }
 
     Box(
