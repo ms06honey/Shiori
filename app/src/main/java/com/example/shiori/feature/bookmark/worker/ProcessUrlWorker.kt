@@ -1,13 +1,21 @@
 ﻿package com.example.shiori.feature.bookmark.worker
 
-import android.app.NotificationManager
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.*
 import com.example.shiori.BuildConfig
+import com.example.shiori.MainActivity
 import com.example.shiori.R
 import com.example.shiori.core.datastore.EncryptedPrefsManager
 import com.example.shiori.core.scraper.ScrapedContent
@@ -114,7 +122,13 @@ class ProcessUrlWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val url = inputData.getString(KEY_URL)?.trim()
-            ?: return Result.failure()
+            ?: run {
+                showSaveFailedNotification(
+                    title = "保存できませんでした",
+                    detail = "保存対象のURLを取得できませんでした。"
+                )
+                return Result.failure()
+            }
         val sharedText = inputData.getString(KEY_SHARED_TEXT)?.trim()?.takeIf(String::isNotBlank)
         val sourcePackage = inputData.getString(KEY_SOURCE_PACKAGE)?.trim()?.takeIf(String::isNotBlank)
         val sharedLocalVideoPath = inputData.getString(KEY_SHARED_LOCAL_VIDEO_PATH)?.trim()?.takeIf(String::isNotBlank)
@@ -127,11 +141,20 @@ class ProcessUrlWorker @AssistedInject constructor(
 
         // ── Step 1: pending ブックマークを取得 or 新規作成 ─────────
         // 再解析の場合は既存IDを直接使ってリセット、通常登録は従来ロジック
-        val bookmarkId = if (existingId != null) {
-            repository.resetBookmarkToProcessing(existingId)
-            existingId
-        } else {
-            repository.getOrCreatePendingBookmark(url)
+        val bookmarkId = try {
+            if (existingId != null) {
+                repository.resetBookmarkToProcessing(existingId)
+                existingId
+            } else {
+                repository.getOrCreatePendingBookmark(url)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to prepare bookmark for url=$url: ${e.message}", e)
+            showSaveFailedNotification(
+                title = fallbackTitle,
+                detail = "保存の準備に失敗しました。しばらくしてから再度お試しください。"
+            )
+            return Result.failure()
         }
 
         // ── Step 2: フォアグラウンド通知 ────────────────────────────
@@ -262,19 +285,29 @@ class ProcessUrlWorker @AssistedInject constructor(
             } catch (e: Exception) {
                 // 失敗時も既に取得済みのスクレイプ結果 or URL を使って保存
                 Log.e(TAG, "doWork failed for url=$url: ${e.message}", e)
-                repository.updateAiMetadata(
-                    bookmarkId,
-                    scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
-                    scraped?.description ?: fallbackSummary,
-                    "未分類",
-                    "",
-                    thumbnailUrl = scraped?.imageUrl ?: "",
-                    videoUrl = scraped?.videoUrl ?: "",
-                    localVideoPath = localVideoPath,
-                    localImagePaths = localImagePathsStr
-                )
-                showResultNotification(scraped?.title ?: fallbackTitle)
-                Result.success()
+                runCatching {
+                    repository.updateAiMetadata(
+                        bookmarkId,
+                        scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                        scraped?.description ?: fallbackSummary,
+                        "未分類",
+                        "",
+                        thumbnailUrl = scraped?.imageUrl ?: "",
+                        videoUrl = scraped?.videoUrl ?: "",
+                        localVideoPath = localVideoPath,
+                        localImagePaths = localImagePathsStr
+                    )
+                }.onSuccess {
+                    showResultNotification(scraped?.title ?: fallbackTitle)
+                    return@withContext Result.success()
+                }.onFailure { saveError ->
+                    Log.e(TAG, "Failed to persist bookmark for url=$url: ${saveError.message}", saveError)
+                    showSaveFailedNotification(
+                        title = scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                        detail = saveError.message ?: e.message ?: "ブックマークを保存できませんでした。"
+                    )
+                }
+                Result.failure()
             }
         }
     }
@@ -457,15 +490,51 @@ class ProcessUrlWorker @AssistedInject constructor(
         )
     }
 
+    private fun buildNotificationPendingIntent(): PendingIntent = PendingIntent.getActivity(
+        appContext,
+        0,
+        Intent(appContext, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        },
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    private fun canPostResultNotifications(): Boolean {
+        val hasPermission =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(
+                    appContext,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+
+        return hasPermission && NotificationManagerCompat.from(appContext).areNotificationsEnabled()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun notifyResult(notificationId: Int, builder: NotificationCompat.Builder) {
+        if (!canPostResultNotifications()) return
+        NotificationManagerCompat.from(appContext).notify(notificationId, builder.build())
+    }
+
     private fun showResultNotification(title: String) {
         val notif = NotificationCompat.Builder(appContext, NotificationConstants.CHANNEL_RESULT)
             .setContentTitle("保存しました")
             .setContentText(title)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setAutoCancel(true)
-            .build()
-        appContext.getSystemService(NotificationManager::class.java)
-            .notify(NotificationIds.RESULT, notif)
+            .setContentIntent(buildNotificationPendingIntent())
+        notifyResult(NotificationIds.RESULT_SUCCESS, notif)
+    }
+
+    private fun showSaveFailedNotification(title: String, detail: String) {
+        val notif = NotificationCompat.Builder(appContext, NotificationConstants.CHANNEL_RESULT)
+            .setContentTitle("保存できませんでした")
+            .setContentText(title)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setAutoCancel(true)
+            .setContentIntent(buildNotificationPendingIntent())
+        notifyResult(NotificationIds.RESULT_FAILURE, notif)
     }
 
     /** Gemini APIキー未設定・無効のとき設定を促す通知を表示 */
@@ -475,9 +544,8 @@ class ProcessUrlWorker @AssistedInject constructor(
             .setContentText("設定画面でAPIキーを入力するとAI解析・タグ付け・日本語翻訳が有効になります")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setAutoCancel(true)
-            .build()
-        appContext.getSystemService(NotificationManager::class.java)
-            .notify(NotificationIds.RESULT + 1, notif)
+            .setContentIntent(buildNotificationPendingIntent())
+        notifyResult(NotificationIds.API_KEY_WARNING, notif)
     }
 
     // ── 内部データクラス ──────────────────────────────────────────────
