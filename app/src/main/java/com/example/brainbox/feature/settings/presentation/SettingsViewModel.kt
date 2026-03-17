@@ -15,7 +15,9 @@ data class SettingsUiState(
     val apiKeyInput: String = "",
     val isKeySet: Boolean = false,
     val isSaved: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    /** §4.2: PIN/指紋変更で Keystore が破壊された場合 true → 再設定を促す */
+    val keyInvalidated: Boolean = false
 )
 
 @HiltViewModel
@@ -27,7 +29,12 @@ class SettingsViewModel @Inject constructor(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        _uiState.update { it.copy(isKeySet = encryptedPrefsManager.getGeminiApiKey() != null) }
+        _uiState.update {
+            it.copy(
+                isKeySet = encryptedPrefsManager.getGeminiApiKey() != null,
+                keyInvalidated = encryptedPrefsManager.wasKeyInvalidated
+            )
+        }
     }
 
     fun onApiKeyChange(value: String) {
@@ -47,4 +54,5 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun clearSaved() = _uiState.update { it.copy(isSaved = false) }
+    fun clearKeyInvalidated() = _uiState.update { it.copy(keyInvalidated = false) }
 }

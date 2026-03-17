@@ -33,6 +33,16 @@ fun SettingsScreen(
         }
     }
 
+    // §4.2: PIN/指紋変更で Keystore が破壊された場合に警告を表示
+    LaunchedEffect(uiState.keyInvalidated) {
+        if (uiState.keyInvalidated) {
+            snackbarHostState.showSnackbar(
+                "端末のセキュリティ設定変更により、保存データがリセットされました。APIキーを再入力してください。"
+            )
+            viewModel.clearKeyInvalidated()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
