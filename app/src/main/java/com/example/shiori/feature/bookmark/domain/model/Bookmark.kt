@@ -24,6 +24,60 @@ data class Bookmark(
     val localImagePaths: List<String> = emptyList()
 )
 
+private const val AI_POINTS_MARKER = "[[BB_AI_POINTS]]"
+
+data class BookmarkAiSummary(
+    val overview: String,
+    val points: List<String>
+)
+
+fun buildStoredAiSummary(overview: String, points: List<String>): String {
+    val cleanOverview = overview.trim()
+    val cleanPoints = points.asSequence()
+        .map(::normalizeAiPoint)
+        .filter(String::isNotBlank)
+        .distinct()
+        .take(5)
+        .toList()
+
+    if (cleanOverview.isBlank() && cleanPoints.isEmpty()) return ""
+    if (cleanPoints.isEmpty()) return cleanOverview
+
+    val pointBlock = cleanPoints.joinToString("\n") { "• $it" }
+    return if (cleanOverview.isBlank()) {
+        "$AI_POINTS_MARKER\n$pointBlock"
+    } else {
+        "$cleanOverview\n\n$AI_POINTS_MARKER\n$pointBlock"
+    }
+}
+
+fun parseStoredAiSummary(rawSummary: String): BookmarkAiSummary {
+    val normalized = rawSummary.trim()
+    if (normalized.isBlank()) return BookmarkAiSummary(overview = "", points = emptyList())
+
+    val parts = normalized.split(AI_POINTS_MARKER, limit = 2)
+    if (parts.size == 1) {
+        return BookmarkAiSummary(overview = normalized, points = emptyList())
+    }
+
+    val overview = parts[0].trim()
+    val points = parts[1]
+        .lineSequence()
+        .map(::normalizeAiPoint)
+        .filter(String::isNotBlank)
+        .toList()
+
+    return BookmarkAiSummary(overview = overview, points = points)
+}
+
+fun Bookmark.parsedAiSummary(): BookmarkAiSummary = parseStoredAiSummary(summary)
+
+
+private fun normalizeAiPoint(point: String): String =
+    point.trim()
+        .replace(Regex("""^(?:[-•・]|\d+[.)])\s*"""), "")
+        .trim()
+
 /**
  * ブックマークを Markdown 形式の文字列に変換する。
  *
@@ -44,6 +98,8 @@ data class Bookmark(
  * ```
  */
 fun Bookmark.toMarkdown(): String = buildString {
+    val aiSummary = parsedAiSummary()
+
     // タイトル
     appendLine("## $title")
     appendLine()
@@ -58,10 +114,16 @@ fun Bookmark.toMarkdown(): String = buildString {
     appendLine("**保存日**: $dateStr")
 
     // サマリー
-    if (summary.isNotBlank()) {
+    if (aiSummary.overview.isNotBlank()) {
         appendLine()
         appendLine("### サマリー")
-        appendLine(summary)
+        appendLine(aiSummary.overview)
+    }
+
+    if (aiSummary.points.isNotEmpty()) {
+        appendLine()
+        appendLine("### ポイント")
+        aiSummary.points.forEach { appendLine("- $it") }
     }
 
     // メモ

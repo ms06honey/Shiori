@@ -58,6 +58,43 @@ class LocalVideoStore @Inject constructor(
         null
     }
 
+    suspend fun importFromSharedPath(
+        bookmarkId: Long,
+        sharedPath: String,
+        mimeType: String? = null
+    ): String? = withContext(Dispatchers.IO) {
+        val sourceFile = File(sharedPath)
+        if (!sourceFile.exists() || sourceFile.length() <= 0L) {
+            Log.w(TAG, "importFromSharedPath: source file missing $sharedPath")
+            SharedVideoImportStore.deleteTempFile(sharedPath)
+            return@withContext null
+        }
+
+        val dir = prepareBookmarkDir(bookmarkId)
+        val extension = guessVideoExtension(mimeType.orEmpty(), sourceFile.name)
+        val destFile = File(dir, "video.$extension")
+
+        return@withContext runCatching {
+            sourceFile.copyTo(destFile, overwrite = true)
+            if (destFile.length() <= 0L) {
+                destFile.delete()
+                null
+            } else {
+                SharedVideoImportStore.deleteTempFile(sharedPath)
+                destFile.absolutePath
+            }
+        }.onFailure {
+            Log.e(TAG, "importFromSharedPath failed for $sharedPath: ${it.message}", it)
+        }.getOrNull()
+    }
+
+    private fun prepareBookmarkDir(bookmarkId: Long): File {
+        val dir = File(context.filesDir, "videos/$bookmarkId")
+        if (dir.exists()) dir.deleteRecursively()
+        dir.mkdirs()
+        return dir
+    }
+
     fun deleteAll(bookmarkId: Long) {
         val dir = File(context.filesDir, "videos/$bookmarkId")
         if (dir.exists()) {

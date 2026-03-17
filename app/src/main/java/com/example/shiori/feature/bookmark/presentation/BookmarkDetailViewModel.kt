@@ -6,9 +6,11 @@ import com.example.shiori.feature.bookmark.domain.model.Bookmark
 import com.example.shiori.feature.bookmark.domain.repository.BookmarkRepository
 import com.example.shiori.feature.bookmark.domain.scheduler.BookmarkProcessingScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,11 +34,17 @@ class BookmarkDetailViewModel @Inject constructor(
     private val _editingMemo = MutableStateFlow("")
     val editingMemo: StateFlow<String> = _editingMemo.asStateFlow()
 
+    private var bookmarkObserveJob: Job? = null
+
     fun load(id: Long) {
-        viewModelScope.launch {
-            val b = repository.getBookmarkById(id)
-            _bookmark.value = b
-            _editingMemo.value = b?.userMemo ?: ""
+        bookmarkObserveJob?.cancel()
+        bookmarkObserveJob = viewModelScope.launch {
+            repository.observeBookmarkById(id).collectLatest { b ->
+                _bookmark.value = b
+                if (!_showMemoDialog.value) {
+                    _editingMemo.value = b?.userMemo ?: ""
+                }
+            }
         }
     }
 
@@ -47,9 +55,6 @@ class BookmarkDetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 scheduler.reanalyzeById(current.id, current.url)
-                // Workerが非同期で動くため少し待ってからDBを再読み込み
-                kotlinx.coroutines.delay(500)
-                _bookmark.value = repository.getBookmarkById(current.id)
             } finally {
                 _isReanalyzing.value = false
             }

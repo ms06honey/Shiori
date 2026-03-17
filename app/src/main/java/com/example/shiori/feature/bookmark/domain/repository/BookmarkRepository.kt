@@ -8,6 +8,7 @@ interface BookmarkRepository {
     fun getAllCategories(): Flow<List<String>>
     fun getBookmarksByCategory(category: String): Flow<List<Bookmark>>
     fun searchBookmarks(query: String): Flow<List<Bookmark>>
+    fun observeBookmarkById(id: Long): Flow<Bookmark?>
     suspend fun getBookmarkById(id: Long): Bookmark?
     /** Share Intent 受信直後に placeholder を保存し ID を返す（Worker が使用） */
     suspend fun saveInitialBookmark(url: String): Long

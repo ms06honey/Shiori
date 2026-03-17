@@ -94,6 +94,7 @@ dependencies {
 
     // Async - Coroutines
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
 
     // Background - WorkManager + Hilt integration
     implementation(libs.androidx.work.runtime.ktx)

@@ -7,9 +7,13 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
@@ -139,9 +143,18 @@ private fun FullscreenImageViewer(
     onDismiss: () -> Unit,
     onMessage: (String) -> Unit
 ) {
-    var currentIndex by remember { mutableIntStateOf(initialIndex.coerceIn(0, imagePaths.lastIndex)) }
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(0, imagePaths.lastIndex),
+        pageCount = { imagePaths.size }
+    )
+    val currentIndex = pagerState.currentPage
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var isCurrentImageZoomed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentIndex) {
+        isCurrentImageZoomed = false
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -156,11 +169,22 @@ private fun FullscreenImageViewer(
                 .fillMaxSize()
                 .background(Color.Black)
         ) {
-            // ── 画像（ピンチズーム + ドラッグ） ────────────────────
-            ZoomableImage(
-                filePath = imagePaths[currentIndex],
-                modifier = Modifier.fillMaxSize()
-            )
+            // ── 画像（左右スワイプ + ピンチズーム + ドラッグ） ────────
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                userScrollEnabled = imagePaths.size > 1 && !isCurrentImageZoomed
+            ) { page ->
+                ZoomableImage(
+                    filePath = imagePaths[page],
+                    modifier = Modifier.fillMaxSize(),
+                    onZoomedStateChange = { zoomed ->
+                        if (page == pagerState.currentPage) {
+                            isCurrentImageZoomed = zoomed
+                        }
+                    }
+                )
+            }
 
             // ── 上部バー（閉じる + インジケーター） ────────────────
             Row(
@@ -218,38 +242,31 @@ private fun FullscreenImageViewer(
                 }
             }
 
-            // ── 下部ナビゲーションバー ──────────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomStart)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 前の画像
-                if (imagePaths.size > 1) {
-                    FilledTonalButton(
-                        onClick = {
-                            if (currentIndex > 0) currentIndex--
-                        },
-                        enabled = currentIndex > 0,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("◀ 前") }
-                }
+            // ── 中央左右ナビゲーション ──────────────────────────────
+            if (imagePaths.size > 1) {
+                SideOverlayNavigationButton(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 12.dp),
+                    icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "前の画像",
+                    enabled = currentIndex > 0,
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(currentIndex - 1) }
+                    }
+                )
 
-                // 次の画像
-                if (imagePaths.size > 1) {
-                    FilledTonalButton(
-                        onClick = {
-                            if (currentIndex < imagePaths.lastIndex) currentIndex++
-                        },
-                        enabled = currentIndex < imagePaths.lastIndex,
-                        modifier = Modifier.weight(1f)
-                    ) { Text("次 ▶") }
-                }
+                SideOverlayNavigationButton(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp),
+                    icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "次の画像",
+                    enabled = currentIndex < imagePaths.lastIndex,
+                    onClick = {
+                        scope.launch { pagerState.animateScrollToPage(currentIndex + 1) }
+                    }
+                )
             }
         }
     }
@@ -258,7 +275,11 @@ private fun FullscreenImageViewer(
 // ── ズーム可能な画像 ──────────────────────────────────────────────────
 
 @Composable
-private fun ZoomableImage(filePath: String, modifier: Modifier = Modifier) {
+private fun ZoomableImage(
+    filePath: String,
+    modifier: Modifier = Modifier,
+    onZoomedStateChange: (Boolean) -> Unit = {}
+) {
     val file = remember(filePath) { File(filePath) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
@@ -267,6 +288,7 @@ private fun ZoomableImage(filePath: String, modifier: Modifier = Modifier) {
     // ページが変わったらリセット
     LaunchedEffect(filePath) {
         scale = 1f; offsetX = 0f; offsetY = 0f
+        onZoomedStateChange(false)
     }
 
     Box(
@@ -280,6 +302,7 @@ private fun ZoomableImage(filePath: String, modifier: Modifier = Modifier) {
                     } else {
                         offsetX = 0f; offsetY = 0f
                     }
+                    onZoomedStateChange(scale > 1.02f)
                 }
             },
         contentAlignment = Alignment.Center
@@ -300,6 +323,34 @@ private fun ZoomableImage(filePath: String, modifier: Modifier = Modifier) {
                     translationY = offsetY
                 )
         )
+    }
+}
+
+@Composable
+private fun SideOverlayNavigationButton(
+    modifier: Modifier = Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = modifier.size(52.dp),
+        shape = CircleShape,
+        color = Color.Black.copy(alpha = if (enabled) 0.42f else 0.22f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        onClick = onClick,
+        enabled = enabled
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = Color.White.copy(alpha = if (enabled) 0.95f else 0.45f),
+                modifier = Modifier.size(32.dp)
+            )
+        }
     }
 }
 

@@ -14,13 +14,23 @@ class WorkManagerBookmarkProcessingScheduler @Inject constructor(
     override fun enqueueUrl(
         url: String,
         sharedText: String?,
-        sourcePackage: String?
+        sourcePackage: String?,
+        sharedLocalVideoPath: String?,
+        sharedMimeType: String?,
+        sharedTitleHint: String?
     ) {
         // URL をキーに KEEP: 同じ URL の処理が既にキューにあれば重複登録しない
         workManager.enqueueUniqueWork(
             "process_url_${url.hashCode()}",
             ExistingWorkPolicy.KEEP,
-            ProcessUrlWorker.buildRequest(url, sharedText, sourcePackage)
+            ProcessUrlWorker.buildRequest(
+                url = url,
+                sharedText = sharedText,
+                sourcePackage = sourcePackage,
+                sharedLocalVideoPath = sharedLocalVideoPath,
+                sharedMimeType = sharedMimeType,
+                sharedTitleHint = sharedTitleHint
+            )
         )
     }
 

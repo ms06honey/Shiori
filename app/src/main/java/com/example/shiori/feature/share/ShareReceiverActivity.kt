@@ -1,17 +1,22 @@
 ﻿package com.example.shiori.feature.share
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.core.content.IntentCompat
+import androidx.lifecycle.lifecycleScope
+import com.example.shiori.core.util.SharedVideoImportStore
 import com.example.shiori.feature.bookmark.domain.scheduler.BookmarkProcessingScheduler
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * PDF仕様書 §3.1 / §6 UXフロー に準拠した透過 Activity。
  *
  * ・UI を一切表示しない（透明テーマ適用）
- * ・Share Intent から URL を取得
+ * ・Share Intent から URL または共有動画本体を取得
  * ・ProcessUrlWorker を WorkManager にキュー登録
  * ・即座に finish() → 呼び出し元アプリへ復帰
  */
@@ -24,29 +29,49 @@ class ShareReceiverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val sharePayload = intent
-            ?.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
-            ?.let { shareIntent ->
-                listOfNotNull(
-                    shareIntent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.takeIf(String::isNotBlank),
-                    shareIntent.getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf(String::isNotBlank)
-                ).joinToString("\n").takeIf(String::isNotBlank)
+        lifecycleScope.launch {
+            val shareIntent = intent?.takeIf { it.action == Intent.ACTION_SEND }
+            val mimeType = shareIntent?.type.orEmpty()
+            val sharePayload = shareIntent?.toSharePayload()
+            val url = sharePayload?.extractUrl()
+            val sourcePackage = referrer?.host?.takeIf { it.isNotBlank() }
+            val importedVideo = shareIntent
+                ?.takeIf { mimeType.startsWith("video/") || it.hasStreamExtra() }
+                ?.extractStreamUri()
+                ?.let { uri -> SharedVideoImportStore.importToTempFile(this@ShareReceiverActivity, uri, mimeType) }
+
+            if (url != null || importedVideo != null) {
+                val effectiveUrl = url ?: "shared-video://imported/${System.currentTimeMillis()}"
+                val effectiveSharedText = sharePayload
+                    ?: importedVideo?.displayName
+                        ?.substringBeforeLast('.')
+                        ?.takeIf(String::isNotBlank)
+
+                bookmarkProcessingScheduler.enqueueUrl(
+                    url = effectiveUrl,
+                    sharedText = effectiveSharedText,
+                    sourcePackage = sourcePackage,
+                    sharedLocalVideoPath = importedVideo?.localPath,
+                    sharedMimeType = importedVideo?.mimeType,
+                    sharedTitleHint = importedVideo?.displayName
+                )
             }
 
-        val url = sharePayload?.extractUrl()
-        val sourcePackage = referrer?.host?.takeIf { it.isNotBlank() }
-
-        if (url != null) {
-            bookmarkProcessingScheduler.enqueueUrl(
-                url = url,
-                sharedText = sharePayload,
-                sourcePackage = sourcePackage
-            )
+            // ★ setContent() を呼ばずに即終了 → 元のアプリへ戻る
+            finish()
         }
-
-        // ★ setContent() を呼ばずに即終了 → 元のアプリへ戻る
-        finish()
     }
+
+    private fun Intent.toSharePayload(): String? =
+        listOfNotNull(
+            getStringExtra(Intent.EXTRA_SUBJECT)?.trim()?.takeIf(String::isNotBlank),
+            getStringExtra(Intent.EXTRA_TEXT)?.trim()?.takeIf(String::isNotBlank)
+        ).joinToString("\n").takeIf(String::isNotBlank)
+
+    private fun Intent.hasStreamExtra(): Boolean = extractStreamUri() != null
+
+    private fun Intent.extractStreamUri(): Uri? =
+        IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
 
     /**
      * テキスト中から URL を優先順位付きで抽出する。

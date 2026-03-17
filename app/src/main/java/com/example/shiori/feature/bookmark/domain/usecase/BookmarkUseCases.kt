@@ -39,8 +39,18 @@ class EnqueueBookmarkProcessingUseCase @Inject constructor(
     operator fun invoke(
         url: String,
         sharedText: String? = null,
-        sourcePackage: String? = null
-    ) = scheduler.enqueueUrl(url, sharedText, sourcePackage)
+        sourcePackage: String? = null,
+        sharedLocalVideoPath: String? = null,
+        sharedMimeType: String? = null,
+        sharedTitleHint: String? = null
+    ) = scheduler.enqueueUrl(
+        url = url,
+        sharedText = sharedText,
+        sourcePackage = sourcePackage,
+        sharedLocalVideoPath = sharedLocalVideoPath,
+        sharedMimeType = sharedMimeType,
+        sharedTitleHint = sharedTitleHint
+    )
 }
 
 class ExportBookmarksUseCase @Inject constructor(

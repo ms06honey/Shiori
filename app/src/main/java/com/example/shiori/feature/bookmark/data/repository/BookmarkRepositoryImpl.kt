@@ -30,6 +30,9 @@ class BookmarkRepositoryImpl @Inject constructor(
     override fun searchBookmarks(query: String): Flow<List<Bookmark>> =
         dao.searchBookmarks(query).map { it.map(BookmarkEntity::toDomain) }
 
+    override fun observeBookmarkById(id: Long): Flow<Bookmark?> =
+        dao.observeBookmarkById(id).map { it?.toDomain() }
+
     override suspend fun getBookmarkById(id: Long): Bookmark? =
         dao.getBookmarkById(id)?.toDomain()
 

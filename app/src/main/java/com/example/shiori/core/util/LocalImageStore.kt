@@ -34,9 +34,14 @@ class LocalImageStore @Inject constructor(
      * 画像 URL リストを並列ではなく順番にダウンロードしてローカルに保存する。
      * @param bookmarkId 保存先ディレクトリ名に使用するブックマーク ID
      * @param imageUrls  ダウンロードする画像 URL リスト（先頭がサムネイル優先度最高）
+     * @param referer    必要に応じて送る Referer ヘッダー（Instagram CDN 等の救済用）
      * @return 保存に成功したファイルの絶対パスリスト（先頭がサムネイル用）
      */
-    suspend fun downloadAll(bookmarkId: Long, imageUrls: List<String>): List<String> =
+    suspend fun downloadAll(
+        bookmarkId: Long,
+        imageUrls: List<String>,
+        referer: String? = null
+    ): List<String> =
         withContext(Dispatchers.IO) {
             if (imageUrls.isEmpty()) return@withContext emptyList()
 
@@ -45,7 +50,7 @@ class LocalImageStore @Inject constructor(
 
             imageUrls.take(MAX_IMAGES).mapIndexedNotNull { index, url ->
                 try {
-                    val request = Request.Builder()
+                    val requestBuilder = Request.Builder()
                         .url(url)
                         .header(
                             "User-Agent",
@@ -57,7 +62,12 @@ class LocalImageStore @Inject constructor(
                             "Accept",
                             "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
                         )
-                        .build()
+
+                    if (!referer.isNullOrBlank()) {
+                        requestBuilder.header("Referer", referer)
+                    }
+
+                    val request = requestBuilder.build()
 
                     val bytes = okHttpClient.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {

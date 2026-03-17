@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.util.formatDate
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
+import com.example.shiori.feature.bookmark.domain.model.parsedAiSummary
 import com.example.shiori.feature.bookmark.domain.model.toMarkdown
 import java.io.File
 import kotlinx.coroutines.launch
@@ -66,6 +66,10 @@ fun BookmarkDetailScreen(
                 },
                 actions = {
                     val b = bookmark ?: return@TopAppBar
+                    val canOpenInBrowser = remember(b.url) {
+                        b.url.startsWith("https://", ignoreCase = true) ||
+                            b.url.startsWith("http://", ignoreCase = true)
+                    }
                     // MD コピーボタン
                     IconButton(onClick = {
                         clipboardManager.setText(AnnotatedString(b.toMarkdown()))
@@ -77,9 +81,12 @@ fun BookmarkDetailScreen(
                         if (isReanalyzing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else Icon(Icons.Default.Refresh, contentDescription = "再解析")
                     }
-                    IconButton(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(b.url)))
-                    }) {
+                    IconButton(
+                        onClick = {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(b.url)))
+                        },
+                        enabled = canOpenInBrowser
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "ブラウザで開く")
                     }
                 }
@@ -126,6 +133,7 @@ private fun DetailContent(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val aiSummary = remember(bookmark.summary) { bookmark.parsedAiSummary() }
 
     Column(
         modifier = modifier
@@ -203,11 +211,40 @@ private fun DetailContent(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
-                    bookmark.summary.isNotBlank() -> Text(
-                        bookmark.summary,
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
-                    )
+                    aiSummary.overview.isNotBlank() || aiSummary.points.isNotEmpty() -> {
+                        if (aiSummary.overview.isNotBlank()) {
+                            Text(
+                                "概要",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                aiSummary.overview,
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                            )
+                        }
+
+                        if (aiSummary.points.isNotEmpty()) {
+                            Spacer(Modifier.height(if (aiSummary.overview.isNotBlank()) 12.dp else 0.dp))
+                            Text(
+                                "ポイント",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                aiSummary.points.forEach { point ->
+                                    Text(
+                                        text = "• $point",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
+                                    )
+                                }
+                            }
+                        }
+                    }
                     else -> Text(
                         "サマリーがありません。再解析ボタンで取得できます。",
                         style = MaterialTheme.typography.bodyMedium,

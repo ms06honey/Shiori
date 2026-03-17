@@ -35,7 +35,8 @@ data class ScrapedContent(
 
 /**
  * Jsoup を使って Web ページのメタ情報と本文を抽出する。
- * X/Twitter は HTML スクレイプが困難なため専用フローで対応する。
+ * X/Twitter と Instagram は HTML スクレイプだけでは不十分なため専用フローを併用する。
+ * Instagram は ddinstagram.com の og:video も優先活用する。
  */
 @Singleton
 class WebScraper @Inject constructor(
@@ -68,6 +69,24 @@ class WebScraper @Inject constructor(
         /** 1 ページから収集する最大動画候補数 */
         private const val MAX_ALL_VIDEOS = 8
         private const val TAG = "WebScraper"
+
+        internal fun buildDdInstagramUrl(url: String): String? = runCatching {
+            val source = URL(url)
+            val host = source.host.lowercase()
+            if (host == "ddinstagram.com" || host == "www.ddinstagram.com") {
+                return@runCatching url
+            }
+            if (host !in setOf("instagram.com", "www.instagram.com", "m.instagram.com", "instagr.am", "www.instagr.am")) {
+                return@runCatching null
+            }
+
+            URL(
+                source.protocol.ifBlank { "https" },
+                "ddinstagram.com",
+                source.port,
+                source.file
+            ).toString()
+        }.getOrNull()
     }
 
     /**
@@ -102,25 +121,32 @@ class WebScraper @Inject constructor(
             val ua = activeUserAgent
             val finalUrl = resolveFinalUrl(url, ua)
             val cleanedSharedText = cleanSharedText(sharedText, finalUrl)
+            val instagramTargetUrl = finalUrl.takeIf(InstagramMediaExtractor::isInstagramUrl)
+                ?: url.takeIf(InstagramMediaExtractor::isInstagramUrl)
 
-            val doc = runCatching {
-                Jsoup.connect(finalUrl)
-                    .userAgent(ua)
-                    .timeout(TIMEOUT_MS)
-                    .maxBodySize(0)
-                    .followRedirects(true)
-                    .ignoreHttpErrors(false)
-                    .get()
-            }.getOrNull()
+            val doc = fetchDocument(finalUrl, ua)
 
+            val ddInstagramContent = instagramTargetUrl
+                ?.let(::buildDdInstagramUrl)
+                ?.takeUnless { it.equals(finalUrl, ignoreCase = true) }
+                ?.let { ddUrl -> fetchDocument(ddUrl, CHROME_UA) }
+                ?.let(::extractFromDocument)
+                ?.takeIf { it.videoUrl.isNotBlank() || it.allVideoUrls.isNotEmpty() || it.imageUrl.isNotBlank() }
+
+            val instagramContent = doc?.let { InstagramMediaExtractor.extract(it, finalUrl) }
             val htmlContent = doc?.let { extractFromDocument(it) }
+            val mediaAwareContent = combinePreferredMedia(
+                base = htmlContent,
+                preferredVideo = ddInstagramContent,
+                preferredImage = instagramContent ?: ddInstagramContent
+            )
             val isBlocked = htmlContent?.let(::looksLikeBlockedPage) == true
 
             // ── ③ X コンテンツ取得（モードにより優先 API が変わる） ─────
             val xFallback = xTweetUrl?.let { fetchXContent(it, cleanedSharedText) }
 
             mergeContent(
-                primary = htmlContent?.takeUnless { isBlocked },
+                primary = mediaAwareContent?.takeUnless { isBlocked },
                 xFallback = xFallback,
                 sharedText = cleanedSharedText,
                 originalUrl = finalUrl
@@ -711,6 +737,18 @@ class WebScraper @Inject constructor(
         }.getOrDefault(url)
     }
 
+    private fun fetchDocument(url: String, ua: String = CHROME_UA): Document? = runCatching {
+        Jsoup.connect(url)
+            .userAgent(ua)
+            .timeout(TIMEOUT_MS)
+            .maxBodySize(0)
+            .followRedirects(true)
+            .ignoreHttpErrors(false)
+            .get()
+    }.onFailure {
+        Log.d(TAG, "fetchDocument failed for $url: ${it.message}")
+    }.getOrNull()
+
     private fun extractFromDocument(doc: Document): ScrapedContent {
         val title = doc.select("meta[property=og:title]").attr("content")
             .ifBlank { doc.title() }
@@ -977,6 +1015,76 @@ class WebScraper @Inject constructor(
             ?.replace(Regex("""\s+"""), " ")
             ?.trim()
             ?.takeIf { it.isNotBlank() }
+    }
+
+    private fun combinePreferredMedia(
+        base: ScrapedContent?,
+        preferredVideo: ScrapedContent?,
+        preferredImage: ScrapedContent?
+    ): ScrapedContent? {
+        if (base == null && preferredVideo == null && preferredImage == null) return null
+
+        val mergedImageUrls = (preferredImage?.allImageUrls.orEmpty() +
+            preferredVideo?.allImageUrls.orEmpty() +
+            base?.allImageUrls.orEmpty())
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        val mergedVideoUrls = (preferredVideo?.allVideoUrls.orEmpty() +
+            base?.allVideoUrls.orEmpty() +
+            preferredImage?.allVideoUrls.orEmpty())
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        val title = base?.title?.takeIf { it.isNotBlank() }
+            ?: preferredVideo?.title?.takeIf { it.isNotBlank() }
+            ?: preferredImage?.title?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        val description = base?.description?.takeIf { it.isNotBlank() }
+            ?: preferredVideo?.description?.takeIf { it.isNotBlank() }
+            ?: preferredImage?.description?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        val mainText = base?.mainText?.takeIf { it.isNotBlank() }
+            ?: preferredVideo?.mainText?.takeIf { it.isNotBlank() }
+            ?: preferredImage?.mainText?.takeIf { it.isNotBlank() }
+            ?: ""
+
+        return ScrapedContent(
+            title = title,
+            description = description,
+            mainText = mainText,
+            imageUrl = preferredImage?.imageUrl?.ifBlank {
+                preferredVideo?.imageUrl ?: base?.imageUrl.orEmpty()
+            } ?: preferredVideo?.imageUrl?.ifBlank { base?.imageUrl.orEmpty() } ?: base?.imageUrl.orEmpty(),
+            allImageUrls = mergedImageUrls,
+            videoUrl = preferredVideo?.videoUrl?.ifBlank {
+                base?.videoUrl ?: preferredImage?.videoUrl.orEmpty()
+            } ?: base?.videoUrl?.ifBlank { preferredImage?.videoUrl.orEmpty() } ?: preferredImage?.videoUrl.orEmpty(),
+            allVideoUrls = mergedVideoUrls
+        )
+    }
+
+    private fun ScrapedContent.preferMedia(preferred: ScrapedContent?): ScrapedContent {
+        if (preferred == null) return this
+
+        val mergedImageUrls = (preferred.allImageUrls + allImageUrls)
+            .filter { it.isNotBlank() }
+            .distinct()
+        val mergedVideoUrls = (preferred.allVideoUrls + allVideoUrls)
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        return copy(
+            title = title.ifBlank { preferred.title },
+            description = description.ifBlank { preferred.description },
+            mainText = mainText.ifBlank { preferred.mainText },
+            imageUrl = preferred.imageUrl.ifBlank { imageUrl },
+            allImageUrls = mergedImageUrls,
+            videoUrl = preferred.videoUrl.ifBlank { videoUrl },
+            allVideoUrls = mergedVideoUrls
+        )
     }
 
     private fun String.toSharedFallback(url: String) = ScrapedContent(

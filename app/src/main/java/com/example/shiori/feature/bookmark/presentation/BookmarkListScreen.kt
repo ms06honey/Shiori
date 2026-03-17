@@ -32,6 +32,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.shiori.core.util.formatDate
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
+import com.example.shiori.feature.bookmark.domain.model.parsedAiSummary
 import com.example.shiori.feature.bookmark.domain.model.toMarkdown
 import kotlinx.coroutines.launch
 
@@ -249,6 +250,7 @@ private fun BookmarkCard(
     onCopyMarkdown: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
+    val aiSummary = remember(bookmark.summary) { bookmark.parsedAiSummary() }
 
     Card(
         onClick = onClick,
@@ -280,10 +282,10 @@ private fun BookmarkCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (bookmark.summary.isNotBlank()) {
+                if (aiSummary.overview.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = bookmark.summary,
+                        text = aiSummary.overview,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,

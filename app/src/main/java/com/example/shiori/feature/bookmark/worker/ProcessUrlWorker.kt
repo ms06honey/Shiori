@@ -16,6 +16,7 @@ import com.example.shiori.core.util.LocalImageStore
 import com.example.shiori.core.util.LocalVideoStore
 import com.example.shiori.core.util.NotificationConstants
 import com.example.shiori.core.util.NotificationIds
+import com.example.shiori.feature.bookmark.domain.model.buildStoredAiSummary
 import com.example.shiori.feature.bookmark.domain.repository.BookmarkRepository
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.generationConfig
@@ -51,6 +52,9 @@ class ProcessUrlWorker @AssistedInject constructor(
         const val KEY_URL = "url"
         const val KEY_SHARED_TEXT = "shared_text"
         const val KEY_SOURCE_PACKAGE = "source_package"
+        const val KEY_SHARED_LOCAL_VIDEO_PATH = "shared_local_video_path"
+        const val KEY_SHARED_MIME_TYPE = "shared_mime_type"
+        const val KEY_SHARED_TITLE_HINT = "shared_title_hint"
         /** 再解析時に既存ブックマークIDを渡すキー。設定されていれば新規作成しない。 */
         const val KEY_EXISTING_ID = "existing_id"
         private const val TAG = "ProcessUrlWorker"
@@ -67,7 +71,10 @@ class ProcessUrlWorker @AssistedInject constructor(
         fun buildRequest(
             url: String,
             sharedText: String? = null,
-            sourcePackage: String? = null
+            sourcePackage: String? = null,
+            sharedLocalVideoPath: String? = null,
+            sharedMimeType: String? = null,
+            sharedTitleHint: String? = null
         ): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<ProcessUrlWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
@@ -76,7 +83,10 @@ class ProcessUrlWorker @AssistedInject constructor(
                     workDataOf(
                         KEY_URL to url,
                         KEY_SHARED_TEXT to sharedText,
-                        KEY_SOURCE_PACKAGE to sourcePackage
+                        KEY_SOURCE_PACKAGE to sourcePackage,
+                        KEY_SHARED_LOCAL_VIDEO_PATH to sharedLocalVideoPath,
+                        KEY_SHARED_MIME_TYPE to sharedMimeType,
+                        KEY_SHARED_TITLE_HINT to sharedTitleHint
                     )
                 )
                 .build()
@@ -107,7 +117,13 @@ class ProcessUrlWorker @AssistedInject constructor(
             ?: return Result.failure()
         val sharedText = inputData.getString(KEY_SHARED_TEXT)?.trim()?.takeIf(String::isNotBlank)
         val sourcePackage = inputData.getString(KEY_SOURCE_PACKAGE)?.trim()?.takeIf(String::isNotBlank)
+        val sharedLocalVideoPath = inputData.getString(KEY_SHARED_LOCAL_VIDEO_PATH)?.trim()?.takeIf(String::isNotBlank)
+        val sharedMimeType = inputData.getString(KEY_SHARED_MIME_TYPE)?.trim()?.takeIf(String::isNotBlank)
+        val sharedTitleHint = inputData.getString(KEY_SHARED_TITLE_HINT)?.trim()?.takeIf(String::isNotBlank)
         val existingId = inputData.getLong(KEY_EXISTING_ID, -1L).takeIf { it != -1L }
+        val canScrapeUrl = url.isHttpUrl()
+        val fallbackTitle = sharedTitleHint?.substringBeforeLast('.')?.takeIf(String::isNotBlank) ?: url
+        val fallbackSummary = sharedText ?: sharedTitleHint.orEmpty()
 
         // ── Step 1: pending ブックマークを取得 or 新規作成 ─────────
         // 再解析の場合は既存IDを直接使ってリセット、通常登録は従来ロジック
@@ -132,7 +148,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             var localVideoPath = ""
             try {
                 // ── Step 3 & 4: スクレイプ ────────────────────────────
-                scraped = webScraper.scrape(url, sharedText).getOrNull()
+                scraped = if (canScrapeUrl) webScraper.scrape(url, sharedText).getOrNull() else null
 
                 // ── Step 4.5: 画像をローカルに保存 ───────────────────
                 // 先頭1枚（サムネイル用）は常に保存し、2枚目以降は設定で切り替える
@@ -142,7 +158,11 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 val localPaths: List<String> = if (imageUrlsToDownload.isNotEmpty()) {
                     Log.d(TAG, "Downloading ${imageUrlsToDownload.size} images for bookmarkId=$bookmarkId")
-                    localImageStore.downloadAll(bookmarkId, imageUrlsToDownload)
+                    localImageStore.downloadAll(
+                        bookmarkId = bookmarkId,
+                        imageUrls = imageUrlsToDownload,
+                        referer = url
+                    )
                 } else {
                     emptyList()
                 }
@@ -150,16 +170,24 @@ class ProcessUrlWorker @AssistedInject constructor(
                 Log.d(TAG, "Saved ${localPaths.size} images locally for bookmarkId=$bookmarkId")
 
                 // ── Step 4.6: 動画本体をローカル保存 ─────────────────
+                localVideoPath = if (sharedLocalVideoPath != null) {
+                    localVideoStore.importFromSharedPath(
+                        bookmarkId = bookmarkId,
+                        sharedPath = sharedLocalVideoPath,
+                        mimeType = sharedMimeType
+                    ).orEmpty()
+                } else {
+                    ""
+                }
+
                 val videoCandidates = scraped?.allVideoUrls.orEmpty()
-                localVideoPath = if (videoCandidates.isNotEmpty()) {
+                if (localVideoPath.isBlank() && videoCandidates.isNotEmpty()) {
                     Log.d(TAG, "Trying ${videoCandidates.size} video candidates for bookmarkId=$bookmarkId")
-                    localVideoStore.downloadFirstSupported(
+                    localVideoPath = localVideoStore.downloadFirstSupported(
                         bookmarkId = bookmarkId,
                         videoUrls = videoCandidates,
                         referer = url
                     ).orEmpty()
-                } else {
-                    ""
                 }
                 Log.d(TAG, "Saved local video for bookmarkId=$bookmarkId -> ${localVideoPath.isNotBlank()}")
 
@@ -169,7 +197,9 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 Log.d(TAG, "API key ${if (apiKey != null) "found (len=${apiKey.length})" else "NOT SET"}")
 
-                val (title, summary, category, tags) = if (apiKey != null) {
+                val shouldCallAi = apiKey != null && (scraped != null || !sharedText.isNullOrBlank() || !sharedTitleHint.isNullOrBlank())
+
+                val (title, summary, category, tags) = if (shouldCallAi) {
                     try {
                         callGemini(apiKey, url, scraped, sharedText, sourcePackage)
                     } catch (e: Exception) {
@@ -191,16 +221,16 @@ class ProcessUrlWorker @AssistedInject constructor(
                             e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true -> {
                                 showApiKeyErrorNotification()
                                 AiResult(
-                                    title = scraped?.title?.ifBlank { url } ?: url,
-                                    summary = scraped?.description ?: "",
+                                    title = scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                                    summary = scraped?.description ?: fallbackSummary,
                                     category = "未分類",
                                     tags = ""
                                 )
                             }
                             // その他エラー → OGPフォールバック
                             else -> AiResult(
-                                title = scraped?.title?.ifBlank { url } ?: url,
-                                summary = scraped?.description ?: "",
+                                title = scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                                summary = scraped?.description ?: fallbackSummary,
                                 category = "未分類",
                                 tags = ""
                             )
@@ -211,8 +241,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                     Log.w(TAG, "Gemini API key is not set. Saved with OGP data only.")
                     showApiKeyErrorNotification()
                     AiResult(
-                        title = scraped?.title?.ifBlank { url } ?: url,
-                        summary = scraped?.description ?: "",
+                        title = scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                        summary = scraped?.description ?: fallbackSummary,
                         category = "未分類",
                         tags = ""
                     )
@@ -234,8 +264,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                 Log.e(TAG, "doWork failed for url=$url: ${e.message}", e)
                 repository.updateAiMetadata(
                     bookmarkId,
-                    scraped?.title?.ifBlank { url } ?: url,
-                    scraped?.description ?: "",
+                    scraped?.title?.ifBlank { fallbackTitle } ?: fallbackTitle,
+                    scraped?.description ?: fallbackSummary,
                     "未分類",
                     "",
                     thumbnailUrl = scraped?.imageUrl ?: "",
@@ -243,11 +273,14 @@ class ProcessUrlWorker @AssistedInject constructor(
                     localVideoPath = localVideoPath,
                     localImagePaths = localImagePathsStr
                 )
-                showResultNotification(scraped?.title ?: url)
+                showResultNotification(scraped?.title ?: fallbackTitle)
                 Result.success()
             }
         }
     }
+
+    private fun String.isHttpUrl(): Boolean =
+        startsWith("https://", ignoreCase = true) || startsWith("http://", ignoreCase = true)
 
     // ── Gemini 呼び出し ───────────────────────────────────────────────
 
@@ -301,9 +334,16 @@ class ProcessUrlWorker @AssistedInject constructor(
         {
           "title": "50文字以内の日本語タイトル（元が英語・他言語の場合は日本語に翻訳）",
           "summary": "共有元テキストまたはページ主旨を2〜3文で要約（元が英語・他言語の場合も必ず日本語に翻訳して記述）",
+          "points": ["重要ポイント1", "重要ポイント2", "重要ポイント3"],
           "category": "テクノロジー または ビジネス または 科学 または エンターテイメント または スポーツ または 政治 または 文化 または ライフスタイル または その他",
           "tags": ["キーワード1", "キーワード2", "キーワード3", "キーワード4"]
         }
+
+        pointsのルール（厳守）:
+        - 必ず2〜4個の箇条書きを返す
+        - 各項目は15〜35文字程度で簡潔にする
+        - summaryの言い換えではなく、読み手が押さえるべき具体的ポイントを抽出する
+        - 元が英語・他言語でも必ず日本語に翻訳して記述する
 
         tagsのルール（厳守）:
         - 必ず2〜4個のタグを付ける
@@ -331,6 +371,7 @@ class ProcessUrlWorker @AssistedInject constructor(
                 ?: scraped?.title ?: ""
             val summary = Regex(""""summary"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
                 ?: scraped?.description ?: ""
+            val points = parsePointsFromJson(json)
             val category = Regex(""""category"\s*:\s*"([^"]+)"""").find(json)?.groupValues?.get(1)
                 ?: "その他"
 
@@ -338,7 +379,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             val tags = parseTagsFromJson(json)
 
             Log.d(TAG, "Parsed → title=$title, category=$category, tags=$tags")
-            AiResult(title, summary, category, tags)
+            AiResult(title, buildStoredAiSummary(summary, points), category, tags)
         }.getOrElse {
             AiResult(
                 title = scraped?.title?.ifBlank { "" } ?: "",
@@ -376,6 +417,28 @@ class ProcessUrlWorker @AssistedInject constructor(
 
         // 2〜4 個に制限して返す
         return tags.take(4).joinToString(",")
+    }
+
+    private fun parsePointsFromJson(json: String): List<String> {
+        val arrayMatch = Regex(""""points"\s*:\s*\[([^\]]*)]""").find(json)
+            ?.groupValues?.get(1)
+            .orEmpty()
+
+        val points = if (arrayMatch.isNotBlank()) {
+            Regex(""""([^"]+)"""").findAll(arrayMatch)
+                .map { it.groupValues[1].trim() }
+                .filter { it.isNotBlank() }
+                .toList()
+        } else {
+            Regex(""""points"\s*:\s*"([^"]+)"""").find(json)
+                ?.groupValues?.get(1)
+                ?.split("\n", ",")
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                ?: emptyList()
+        }
+
+        return points.take(4)
     }
 
     // ── 通知ヘルパー ──────────────────────────────────────────────────

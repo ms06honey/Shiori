@@ -34,6 +34,9 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE id = :id")
     suspend fun getBookmarkById(id: Long): BookmarkEntity?
 
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    fun observeBookmarkById(id: Long): Flow<BookmarkEntity?>
+
     // ── 挿入（Worker が最初に placeholder を保存）──────────────────
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity): Long
