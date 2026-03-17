@@ -59,6 +59,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         fun buildRequest(url: String): OneTimeWorkRequest =
             OneTimeWorkRequestBuilder<ProcessUrlWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, java.util.concurrent.TimeUnit.SECONDS)
                 .setInputData(workDataOf(KEY_URL to url))
                 .build()
     }
@@ -75,7 +76,12 @@ class ProcessUrlWorker @AssistedInject constructor(
         val bookmarkId = repository.saveInitialBookmark(url)
 
         // ── Step 2: フォアグラウンド通知 ────────────────────────────
-        setForeground(buildForegroundInfo("AIが解析中..."))
+        // リトライ時はバックグラウンドからフォアグラウンドサービスを起動できないため try-catch
+        try {
+            setForeground(buildForegroundInfo("AIが解析中..."))
+        } catch (e: Exception) {
+            Log.w(TAG, "setForeground skipped (background retry): ${e.message}")
+        }
 
         return withContext(Dispatchers.IO) {
             var scraped: ScrapedContent? = null
@@ -94,20 +100,36 @@ class ProcessUrlWorker @AssistedInject constructor(
                         callGemini(apiKey, url, scraped)
                     } catch (e: Exception) {
                         Log.e(TAG, "Gemini API call failed: ${e.message}", e)
-                        // APIキーが無効な場合は設定を促す通知
-                        if (e.message?.contains("API_KEY", ignoreCase = true) == true ||
-                            e.message?.contains("401", ignoreCase = true) == true ||
-                            e.message?.contains("403", ignoreCase = true) == true ||
-                            e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true
-                        ) {
-                            showApiKeyErrorNotification()
+                        when {
+                            // クォータ超過・一時エラー → WorkManager にリトライさせる
+                            e.javaClass.simpleName.contains("QuotaExceeded") ||
+                            e.message?.contains("quota", ignoreCase = true) == true ||
+                            e.message?.contains("429", ignoreCase = true) == true ||
+                            e.message?.contains("RESOURCE_EXHAUSTED", ignoreCase = true) == true -> {
+                                Log.w(TAG, "Rate limit hit, will retry via WorkManager")
+                                return@withContext Result.retry()
+                            }
+                            // APIキー無効 → 設定を促す通知してOGPフォールバック
+                            e.message?.contains("API_KEY", ignoreCase = true) == true ||
+                            e.message?.contains("401") == true ||
+                            e.message?.contains("403") == true ||
+                            e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true -> {
+                                showApiKeyErrorNotification()
+                                AiResult(
+                                    title = scraped?.title?.ifBlank { url } ?: url,
+                                    summary = scraped?.description ?: "",
+                                    category = "未分類",
+                                    tags = ""
+                                )
+                            }
+                            // その他エラー → OGPフォールバック
+                            else -> AiResult(
+                                title = scraped?.title?.ifBlank { url } ?: url,
+                                summary = scraped?.description ?: "",
+                                category = "未分類",
+                                tags = ""
+                            )
                         }
-                        AiResult(
-                            title = scraped?.title?.ifBlank { url } ?: url,
-                            summary = scraped?.description ?: "",
-                            category = "未分類",
-                            tags = ""
-                        )
                     }
                 } else {
                     // API キー未設定 → OGP データで最低限保存 + 設定を促す通知
@@ -152,11 +174,11 @@ class ProcessUrlWorker @AssistedInject constructor(
         scraped: ScrapedContent?
     ): AiResult {
         val model = GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-2.0-flash-lite",
             apiKey = apiKey,
             generationConfig = generationConfig {
                 temperature = 0.3f
-                maxOutputTokens = 512
+                maxOutputTokens = 1024
             }
         )
 
