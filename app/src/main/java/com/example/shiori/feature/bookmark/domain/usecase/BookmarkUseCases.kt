@@ -40,6 +40,7 @@ class EnqueueBookmarkProcessingUseCase @Inject constructor(
         url: String,
         sharedText: String? = null,
         sourcePackage: String? = null,
+        sourceAppName: String? = null,
         sharedLocalVideoPath: String? = null,
         sharedMimeType: String? = null,
         sharedTitleHint: String? = null
@@ -47,6 +48,7 @@ class EnqueueBookmarkProcessingUseCase @Inject constructor(
         url = url,
         sharedText = sharedText,
         sourcePackage = sourcePackage,
+        sourceAppName = sourceAppName,
         sharedLocalVideoPath = sharedLocalVideoPath,
         sharedMimeType = sharedMimeType,
         sharedTitleHint = sharedTitleHint

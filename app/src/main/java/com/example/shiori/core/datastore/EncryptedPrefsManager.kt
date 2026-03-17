@@ -38,6 +38,7 @@ class EncryptedPrefsManager @Inject constructor(
         private const val KEY_ENABLE_MIN_IMAGE_FILTER = "enable_min_image_filter"
         private const val KEY_MIN_IMAGE_SIZE_THRESHOLD = "min_image_size_threshold"
         private const val KEY_MIN_IMAGE_SIZE_MODE = "min_image_size_mode"
+        private const val KEY_BOOKMARK_LIST_VIEW_MODE = "bookmark_list_view_mode"
 
         /** 選択可能な AI モデル一覧 */
         val AVAILABLE_MODELS = listOf(
@@ -238,4 +239,13 @@ class EncryptedPrefsManager @Inject constructor(
         return runCatching { ImageSizeFilterMode.valueOf(name) }
             .getOrDefault(DEFAULT_MIN_IMAGE_SIZE_MODE)
     }
+
+    /** ブックマークリストの表示モード名を保存 */
+    fun saveBookmarkListViewModeName(modeName: String) {
+        prefs.edit().putString(KEY_BOOKMARK_LIST_VIEW_MODE, modeName).apply()
+    }
+
+    /** ブックマークリストの表示モード名を取得 */
+    fun getBookmarkListViewModeName(): String? =
+        prefs.getString(KEY_BOOKMARK_LIST_VIEW_MODE, null)
 }

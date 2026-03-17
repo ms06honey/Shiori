@@ -3,6 +3,7 @@
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.shiori.core.datastore.EncryptedPrefsManager
 import com.example.shiori.feature.bookmark.domain.model.Bookmark
 import com.example.shiori.feature.bookmark.domain.usecase.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +18,8 @@ data class BookmarkUiState(
     val categories: List<String> = emptyList(),
     val selectedCategoryIndex: Int = 0,   // 0 = "すべて"
     val searchQuery: String = "",
+    val viewMode: BookmarkListViewMode = BookmarkListViewMode.NORMAL,
+    val collapsedGroupKeys: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val exportSuccess: Boolean = false
@@ -24,6 +27,7 @@ data class BookmarkUiState(
 
 @HiltViewModel
 class BookmarkViewModel @Inject constructor(
+    private val encryptedPrefsManager: EncryptedPrefsManager,
     private val getBookmarksUseCase: GetBookmarksUseCase,
     private val getAllCategoriesUseCase: GetAllCategoriesUseCase,
     private val getBookmarksByCategoryUseCase: GetBookmarksByCategoryUseCase,
@@ -40,8 +44,16 @@ class BookmarkViewModel @Inject constructor(
     private val selectedCategory = MutableStateFlow<String?>(null)  // null = すべて
 
     init {
+        restoreViewMode()
         observeCategories()
         observeBookmarks()
+    }
+
+    private fun restoreViewMode() {
+        val restored = encryptedPrefsManager.getBookmarkListViewModeName()
+            ?.let { modeName -> runCatching { BookmarkListViewMode.valueOf(modeName) }.getOrNull() }
+            ?: BookmarkListViewMode.NORMAL
+        _uiState.update { it.copy(viewMode = restored) }
     }
 
     private fun observeCategories() {
@@ -83,6 +95,40 @@ class BookmarkViewModel @Inject constructor(
         searchQuery.value = ""
         selectedCategory.value = if (index == 0) null
         else _uiState.value.categories.getOrNull(index - 1)
+    }
+
+    fun onViewModeSelected(viewMode: BookmarkListViewMode) {
+        _uiState.update { current ->
+            if (current.viewMode == viewMode) current
+            else current.copy(viewMode = viewMode, collapsedGroupKeys = emptySet())
+        }
+        encryptedPrefsManager.saveBookmarkListViewModeName(viewMode.name)
+    }
+
+    fun toggleGroup(groupKey: String) {
+        _uiState.update { current ->
+            val collapsed = current.collapsedGroupKeys.toMutableSet()
+            if (!collapsed.add(groupKey)) {
+                collapsed.remove(groupKey)
+            }
+            current.copy(collapsedGroupKeys = collapsed)
+        }
+    }
+
+    fun expandAllGroups(groupKeys: Collection<String>) {
+        val visibleKeys = groupKeys.toSet()
+        if (visibleKeys.isEmpty()) return
+        _uiState.update { current ->
+            current.copy(collapsedGroupKeys = current.collapsedGroupKeys - visibleKeys)
+        }
+    }
+
+    fun collapseAllGroups(groupKeys: Collection<String>) {
+        val visibleKeys = groupKeys.toSet()
+        if (visibleKeys.isEmpty()) return
+        _uiState.update { current ->
+            current.copy(collapsedGroupKeys = current.collapsedGroupKeys + visibleKeys)
+        }
     }
 
     /** FAB や URL ダイアログから手動で URL を WorkManager にキュー登録 */

@@ -45,6 +45,7 @@ class BookmarkRepositoryImpl @Inject constructor(
 
     override suspend fun updateAiMetadata(
         id: Long, title: String, summary: String, category: String, tags: String,
+        sourcePackage: String, sourceAppName: String,
         thumbnailUrl: String, videoUrl: String, localVideoPath: String, localImagePaths: String
     ) = dao.updateAiMetadata(
         id,
@@ -52,6 +53,8 @@ class BookmarkRepositoryImpl @Inject constructor(
         summary,
         category,
         tags,
+        sourcePackage,
+        sourceAppName,
         thumbnailUrl,
         videoUrl,
         localVideoPath,
@@ -93,6 +96,8 @@ private fun BookmarkEntity.toDomain() = Bookmark(
         tags.split(",").map(String::trim).filter(String::isNotBlank).distinct()
     },
     createdAt = createdAt,
+    sourcePackage = sourcePackage,
+    sourceAppName = sourceAppName,
     userMemo = userMemo,
     thumbnailUrl = thumbnailUrl,
     videoUrl = videoUrl,

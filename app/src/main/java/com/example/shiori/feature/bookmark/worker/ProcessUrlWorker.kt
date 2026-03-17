@@ -60,6 +60,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         const val KEY_URL = "url"
         const val KEY_SHARED_TEXT = "shared_text"
         const val KEY_SOURCE_PACKAGE = "source_package"
+        const val KEY_SOURCE_APP_NAME = "source_app_name"
         const val KEY_SHARED_LOCAL_VIDEO_PATH = "shared_local_video_path"
         const val KEY_SHARED_MIME_TYPE = "shared_mime_type"
         const val KEY_SHARED_TITLE_HINT = "shared_title_hint"
@@ -80,6 +81,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             url: String,
             sharedText: String? = null,
             sourcePackage: String? = null,
+            sourceAppName: String? = null,
             sharedLocalVideoPath: String? = null,
             sharedMimeType: String? = null,
             sharedTitleHint: String? = null
@@ -92,6 +94,7 @@ class ProcessUrlWorker @AssistedInject constructor(
                         KEY_URL to url,
                         KEY_SHARED_TEXT to sharedText,
                         KEY_SOURCE_PACKAGE to sourcePackage,
+                        KEY_SOURCE_APP_NAME to sourceAppName,
                         KEY_SHARED_LOCAL_VIDEO_PATH to sharedLocalVideoPath,
                         KEY_SHARED_MIME_TYPE to sharedMimeType,
                         KEY_SHARED_TITLE_HINT to sharedTitleHint
@@ -131,6 +134,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             }
         val sharedText = inputData.getString(KEY_SHARED_TEXT)?.trim()?.takeIf(String::isNotBlank)
         val sourcePackage = inputData.getString(KEY_SOURCE_PACKAGE)?.trim()?.takeIf(String::isNotBlank)
+        val sourceAppName = inputData.getString(KEY_SOURCE_APP_NAME)?.trim()?.takeIf(String::isNotBlank)
         val sharedLocalVideoPath = inputData.getString(KEY_SHARED_LOCAL_VIDEO_PATH)?.trim()?.takeIf(String::isNotBlank)
         val sharedMimeType = inputData.getString(KEY_SHARED_MIME_TYPE)?.trim()?.takeIf(String::isNotBlank)
         val sharedTitleHint = inputData.getString(KEY_SHARED_TITLE_HINT)?.trim()?.takeIf(String::isNotBlank)
@@ -224,7 +228,7 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 val (title, summary, category, tags) = if (shouldCallAi) {
                     try {
-                        callGemini(apiKey, url, scraped, sharedText, sourcePackage)
+                        callGemini(apiKey, url, scraped, sharedText, sourceAppName ?: sourcePackage)
                     } catch (e: Exception) {
                         Log.e(TAG, "Gemini API call failed: ${e.message}", e)
                         when {
@@ -273,6 +277,8 @@ class ProcessUrlWorker @AssistedInject constructor(
 
                 // ── Step 6: DB 更新 ──────────────────────────────────
                 repository.updateAiMetadata(bookmarkId, title, summary, category, tags,
+                    sourcePackage = sourcePackage.orEmpty(),
+                    sourceAppName = sourceAppName.orEmpty(),
                     thumbnailUrl = scraped?.imageUrl ?: "",
                     videoUrl = scraped?.videoUrl ?: "",
                     localVideoPath = localVideoPath,
@@ -292,6 +298,8 @@ class ProcessUrlWorker @AssistedInject constructor(
                         scraped?.description ?: fallbackSummary,
                         "未分類",
                         "",
+                        sourcePackage = sourcePackage.orEmpty(),
+                        sourceAppName = sourceAppName.orEmpty(),
                         thumbnailUrl = scraped?.imageUrl ?: "",
                         videoUrl = scraped?.videoUrl ?: "",
                         localVideoPath = localVideoPath,
@@ -322,7 +330,7 @@ class ProcessUrlWorker @AssistedInject constructor(
         url: String,
         scraped: ScrapedContent?,
         sharedText: String?,
-        sourcePackage: String?
+        sourceAppName: String?
     ): AiResult {
         val selectedModelId = encryptedPrefsManager.getAiModelId()
         Log.d(TAG, "Using AI model: $selectedModelId")
@@ -342,7 +350,7 @@ class ProcessUrlWorker @AssistedInject constructor(
             // 本文が取得できた場合のみ追加（SPA はここが空）
             scraped?.mainText?.takeIf { it.isNotBlank() }?.let { append("本文: $it\n") }
             sharedText?.takeIf { it.isNotBlank() }?.let { append("共有元テキスト(最優先で解釈): $it\n") }
-            sourcePackage?.takeIf { it.isNotBlank() }?.let { append("共有元アプリ: $it\n") }
+            sourceAppName?.takeIf { it.isNotBlank() }?.let { append("共有元アプリ: $it\n") }
         }
 
         val prompt = buildPrompt(url, content)

@@ -12,6 +12,10 @@ data class Bookmark(
     val category: String = "",
     val tags: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis(),
+    /** 共有元アプリのパッケージ名 */
+    val sourcePackage: String = "",
+    /** 共有元アプリの表示名 */
+    val sourceAppName: String = "",
     /** ユーザーが自由に入力できるメモ */
     val userMemo: String = "",
     /** og:image 等から取得したサムネイル URL */
@@ -105,6 +109,7 @@ private fun normalizeAiPoint(point: String): String =
  */
 fun Bookmark.toMarkdown(): String = buildString {
     val aiSummary = parsedAiSummary()
+    val sourceLabel = sourceAppName.ifBlank { sourcePackage }
 
     // タイトル
     appendLine("## $title")
@@ -114,6 +119,7 @@ fun Bookmark.toMarkdown(): String = buildString {
     appendLine("**URL**: $url")
     if (category.isNotBlank()) appendLine("**カテゴリ**: $category")
     if (tags.isNotEmpty()) appendLine("**タグ**: ${tags.joinToString(", ")}")
+    if (sourceLabel.isNotBlank()) appendLine("**取得元**: $sourceLabel")
     if (videoUrl.isNotBlank()) appendLine("**動画**: $videoUrl")
     if (localVideoPath.isNotBlank()) appendLine("**ローカル動画**: $localVideoPath")
     val dateStr = MARKDOWN_DATE_FORMATTER.format(Instant.ofEpochMilli(createdAt))

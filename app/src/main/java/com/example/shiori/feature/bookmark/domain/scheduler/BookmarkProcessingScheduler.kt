@@ -5,6 +5,7 @@ interface BookmarkProcessingScheduler {
         url: String,
         sharedText: String? = null,
         sourcePackage: String? = null,
+        sourceAppName: String? = null,
         sharedLocalVideoPath: String? = null,
         sharedMimeType: String? = null,
         sharedTitleHint: String? = null

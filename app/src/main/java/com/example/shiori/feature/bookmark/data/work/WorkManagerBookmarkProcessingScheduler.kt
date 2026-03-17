@@ -15,6 +15,7 @@ class WorkManagerBookmarkProcessingScheduler @Inject constructor(
         url: String,
         sharedText: String?,
         sourcePackage: String?,
+        sourceAppName: String?,
         sharedLocalVideoPath: String?,
         sharedMimeType: String?,
         sharedTitleHint: String?
@@ -27,6 +28,7 @@ class WorkManagerBookmarkProcessingScheduler @Inject constructor(
                 url = url,
                 sharedText = sharedText,
                 sourcePackage = sourcePackage,
+                sourceAppName = sourceAppName,
                 sharedLocalVideoPath = sharedLocalVideoPath,
                 sharedMimeType = sharedMimeType,
                 sharedTitleHint = sharedTitleHint

@@ -25,6 +25,8 @@ interface BookmarkRepository {
         summary: String,
         category: String,
         tags: String,
+        sourcePackage: String = "",
+        sourceAppName: String = "",
         thumbnailUrl: String = "",
         videoUrl: String = "",
         localVideoPath: String = "",

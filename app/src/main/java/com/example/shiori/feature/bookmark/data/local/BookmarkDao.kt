@@ -53,6 +53,7 @@ interface BookmarkDao {
         """
         UPDATE bookmarks
         SET title = :title, summary = :summary, category = :category, tags = :tags,
+            sourcePackage = :sourcePackage, sourceAppName = :sourceAppName,
             thumbnailUrl = :thumbnailUrl, videoUrl = :videoUrl, localVideoPath = :localVideoPath,
             localImagePaths = :localImagePaths
         WHERE id = :id
@@ -64,6 +65,8 @@ interface BookmarkDao {
         summary: String,
         category: String,
         tags: String,
+        sourcePackage: String = "",
+        sourceAppName: String = "",
         thumbnailUrl: String = "",
         videoUrl: String = "",
         localVideoPath: String = "",

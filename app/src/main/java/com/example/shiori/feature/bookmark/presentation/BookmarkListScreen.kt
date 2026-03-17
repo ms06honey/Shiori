@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,6 +49,17 @@ fun BookmarkListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
+    val groupedBookmarks = remember(uiState.bookmarks, uiState.viewMode) {
+        buildBookmarkGroups(uiState.bookmarks, uiState.viewMode)
+    }
+    val visibleGroupKeys = remember(groupedBookmarks) { groupedBookmarks.map(BookmarkGroup::id) }
+    val isTreeMode = uiState.viewMode != BookmarkListViewMode.NORMAL
+    val allGroupsCollapsed = remember(visibleGroupKeys, uiState.collapsedGroupKeys) {
+        visibleGroupKeys.isNotEmpty() && visibleGroupKeys.all { it in uiState.collapsedGroupKeys }
+    }
+    val allGroupsExpanded = remember(visibleGroupKeys, uiState.collapsedGroupKeys) {
+        visibleGroupKeys.isNotEmpty() && visibleGroupKeys.none { it in uiState.collapsedGroupKeys }
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -67,6 +79,7 @@ fun BookmarkListScreen(
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var showViewModeMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -82,6 +95,35 @@ fun BookmarkListScreen(
                     containerColor = Color.Transparent
                 ),
                 actions = {
+                    Box {
+                        IconButton(onClick = { showViewModeMenu = true }) {
+                            Icon(Icons.Default.AccountTree, contentDescription = "表示形式の切り替え")
+                        }
+                        DropdownMenu(
+                            expanded = showViewModeMenu,
+                            onDismissRequest = { showViewModeMenu = false }
+                        ) {
+                            BookmarkListViewMode.entries.forEach { mode ->
+                                DropdownMenuItem(
+                                    text = { Text(mode.label) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (mode == uiState.viewMode) {
+                                                Icons.Default.RadioButtonChecked
+                                            } else {
+                                                Icons.Default.RadioButtonUnchecked
+                                            },
+                                            contentDescription = null
+                                        )
+                                    },
+                                    onClick = {
+                                        viewModel.onViewModeSelected(mode)
+                                        showViewModeMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                     IconButton(onClick = {
                         val filename = "shiori_${System.currentTimeMillis()}.json"
                         exportLauncher.launch(filename)
@@ -172,6 +214,15 @@ fun BookmarkListScreen(
                 }
             }
 
+            if (isTreeMode && groupedBookmarks.isNotEmpty()) {
+                TreeBulkActions(
+                    allExpanded = allGroupsExpanded,
+                    allCollapsed = allGroupsCollapsed,
+                    onExpandAll = { viewModel.expandAllGroups(visibleGroupKeys) },
+                    onCollapseAll = { viewModel.collapseAllGroups(visibleGroupKeys) }
+                )
+            }
+
             // ── ブックマーク一覧 ────────────────────────────────────
             if (uiState.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -184,16 +235,49 @@ fun BookmarkListScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(uiState.bookmarks, key = { it.id }) { bookmark ->
-                        BookmarkCard(
-                            bookmark = bookmark,
-                            onClick = { onNavigateToDetail(bookmark.id) },
-                            onDelete = { viewModel.deleteBookmark(bookmark.id) },
-                            onCopyMarkdown = {
-                                clipboardManager.setText(AnnotatedString(bookmark.toMarkdown()))
-                                scope.launch { snackbarHostState.showSnackbar("MDをコピーしました") }
+                    if (uiState.viewMode == BookmarkListViewMode.NORMAL) {
+                        items(uiState.bookmarks, key = { it.id }) { bookmark ->
+                            BookmarkCard(
+                                bookmark = bookmark,
+                                onClick = { onNavigateToDetail(bookmark.id) },
+                                onDelete = { viewModel.deleteBookmark(bookmark.id) },
+                                onCopyMarkdown = {
+                                    clipboardManager.setText(AnnotatedString(bookmark.toMarkdown()))
+                                    scope.launch { snackbarHostState.showSnackbar("MDをコピーしました") }
+                                }
+                            )
+                        }
+                    } else {
+                        groupedBookmarks.forEach { group ->
+                            val isExpanded = group.id !in uiState.collapsedGroupKeys
+                            item(key = "group_${group.id}") {
+                                BookmarkGroupHeader(
+                                    title = group.title,
+                                    count = group.bookmarks.size,
+                                    expanded = isExpanded,
+                                    onClick = { viewModel.toggleGroup(group.id) }
+                                )
                             }
-                        )
+                            if (isExpanded) {
+                                items(group.bookmarks, key = { "${group.id}_${it.id}" }) { bookmark ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 16.dp)
+                                    ) {
+                                        BookmarkCard(
+                                            bookmark = bookmark,
+                                            onClick = { onNavigateToDetail(bookmark.id) },
+                                            onDelete = { viewModel.deleteBookmark(bookmark.id) },
+                                            onCopyMarkdown = {
+                                                clipboardManager.setText(AnnotatedString(bookmark.toMarkdown()))
+                                                scope.launch { snackbarHostState.showSnackbar("MDをコピーしました") }
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     // 末尾にFABと被らないようスペーサー
                     item { Spacer(Modifier.height(80.dp)) }
@@ -211,6 +295,124 @@ fun BookmarkListScreen(
 }
 
 // ── macOS ピル型セグメントチップ ──────────────────────────────────────────
+
+@Composable
+private fun TreeBulkActions(
+    allExpanded: Boolean,
+    allCollapsed: Boolean,
+    onExpandAll: () -> Unit,
+    onCollapseAll: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MiniIconAction(
+            icon = Icons.Default.UnfoldMore,
+            label = "全部開く",
+            enabled = !allExpanded,
+            onClick = onExpandAll
+        )
+        Spacer(Modifier.width(6.dp))
+        MiniIconAction(
+            icon = Icons.Default.UnfoldLess,
+            label = "全部閉じる",
+            enabled = !allCollapsed,
+            onClick = onCollapseAll
+        )
+    }
+}
+
+@Composable
+private fun MiniIconAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
+    }
+
+    Surface(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                modifier = Modifier.size(14.dp),
+                tint = contentColor
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun BookmarkGroupHeader(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick),
+        shape = MaterialTheme.shapes.medium,
+        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandMore else Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = "${count}件",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @Composable
 private fun MacPillChip(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -253,6 +455,7 @@ private fun BookmarkCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     val aiSummary = remember(bookmark.summary) { bookmark.parsedAiSummary() }
+    val sourceLabel = remember(bookmark.url) { bookmark.sourceDisplayLabel() }
 
     Card(
         onClick = onClick,
@@ -316,6 +519,25 @@ private fun BookmarkCard(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.CenterVertically)
+                        )
+                    }
+                }
+                if (sourceLabel.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "取得元: $sourceLabel",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

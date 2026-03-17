@@ -22,6 +22,10 @@ data class BookmarkEntity(
     val tags: String = "",
     /** 保存日時 Unix Timestamp (ms) */
     val createdAt: Long = System.currentTimeMillis(),
+    /** 共有元アプリのパッケージ名 */
+    val sourcePackage: String = "",
+    /** 共有元アプリの表示名 */
+    val sourceAppName: String = "",
     /** ユーザーが自由に入力できるメモ */
     val userMemo: String = "",
     /** スクレイプで取得したサイトのサムネイル画像 URL (og:image 等) */

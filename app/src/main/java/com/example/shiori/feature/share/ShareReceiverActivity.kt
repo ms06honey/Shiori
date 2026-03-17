@@ -35,6 +35,7 @@ class ShareReceiverActivity : ComponentActivity() {
             val sharePayload = shareIntent?.toSharePayload()
             val url = sharePayload?.extractUrl()
             val sourcePackage = referrer?.host?.takeIf { it.isNotBlank() }
+            val sourceAppName = resolveSourceAppName(sourcePackage)
             val importedVideo = shareIntent
                 ?.takeIf { mimeType.startsWith("video/") || it.hasStreamExtra() }
                 ?.extractStreamUri()
@@ -51,6 +52,7 @@ class ShareReceiverActivity : ComponentActivity() {
                     url = effectiveUrl,
                     sharedText = effectiveSharedText,
                     sourcePackage = sourcePackage,
+                    sourceAppName = sourceAppName,
                     sharedLocalVideoPath = importedVideo?.localPath,
                     sharedMimeType = importedVideo?.mimeType,
                     sharedTitleHint = importedVideo?.displayName
@@ -72,6 +74,17 @@ class ShareReceiverActivity : ComponentActivity() {
 
     private fun Intent.extractStreamUri(): Uri? =
         IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
+
+    private fun resolveSourceAppName(packageName: String?): String? {
+        val normalizedPackage = packageName?.trim()?.takeIf(String::isNotBlank) ?: return null
+        return runCatching {
+            val appInfo = packageManager.getApplicationInfo(normalizedPackage, 0)
+            packageManager.getApplicationLabel(appInfo)
+                ?.toString()
+                ?.trim()
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull() ?: normalizedPackage
+    }
 
     /**
      * テキスト中から URL を優先順位付きで抽出する。
