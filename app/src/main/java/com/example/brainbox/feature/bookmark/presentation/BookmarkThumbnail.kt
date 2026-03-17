@@ -3,7 +3,6 @@ package com.example.brainbox.feature.bookmark.presentation
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,7 +31,7 @@ fun BookmarkThumbnail(
     modifier: Modifier = Modifier,
     thumbnailUrl: String = ""
 ) {
-    val shape = RoundedCornerShape(8.dp)
+    val shape = MaterialTheme.shapes.medium // 12dp — macOS 風角丸
 
     if (thumbnailUrl.isNotBlank()) {
         val painter = rememberAsyncImagePainter(model = thumbnailUrl)
@@ -78,7 +77,7 @@ private fun GradientThumbnail(
     ) {
         Text(
             text = initial,
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleLarge,
             color = Color.White,
             fontWeight = FontWeight.Bold
         )
